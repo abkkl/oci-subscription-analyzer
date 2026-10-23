@@ -118,10 +118,10 @@ class OverageEndToEndTests(unittest.TestCase):
     def test_all_baselines_forecast_overage(self):
         output, cells = self.check_run(fixture())
         expected = {
-            "Remaining Credit": "1,000.0", "Future Consumption": "2,000.0",
+            "Remaining Credit": "1,000.0", "Forecasted Consumption": "2,000.0",
             "Unused/Overage Credit - Total": "1,000.0",
-            "Actual Consumption - Daily": "200.0", "Required Consumption - Daily": "100.0",
-            "Unused/Overage Credit - Daily": "100.0", "Actual Consumption - Monthly": "6,200.0",
+            "Forecasted Consumption - Daily": "200.0", "Required Consumption - Daily": "100.0",
+            "Unused/Overage Credit - Daily": "100.0", "Forecasted Consumption - Monthly": "6,200.0",
             "Required Consumption - Monthly": "3,100.0", "Unused/Overage Credit - Monthly": "3,100.0",
             "Days to horizon": "10.0 Days", "Forecast outcome": "Overage estimate"}
         for metric, value in expected.items():
@@ -133,7 +133,7 @@ class OverageEndToEndTests(unittest.TestCase):
 
     def test_mixed_baselines_keep_their_own_outcome_and_monthly_values(self):
         _, cells = self.check_run(fixture(rates=("200", "100", "50")))
-        self.assertEqual(cells["Future Consumption"], ["2,000.0", "1,142.9", "650.0", "550.0"])
+        self.assertEqual(cells["Forecasted Consumption"], ["2,000.0", "1,142.9", "650.0", "550.0"])
         self.assertEqual(cells["Unused/Overage Credit - Total"], ["1,000.0", "142.9", "350.0", "450.0"])
         self.assertEqual(cells["Unused/Overage Credit - Daily"], ["100.0", "14.3", "35.0", "45.0"])
         self.assertEqual(cells["Unused/Overage Credit - Monthly"], ["3,100.0", "442.9", "1,085.0", "1,395.0"])
@@ -165,15 +165,18 @@ class OverageEndToEndTests(unittest.TestCase):
 
     def test_zero_consumption_keeps_unused_credit(self):
         _, cells = self.check_run(fixture(rates=("0", "0", "0")))
-        self.assertEqual(cells["Actual Consumption - Daily"], ["0.0"] * 4)
-        self.assertEqual(cells["Future Consumption"], ["0.0"] * 4)
+        self.assertEqual(cells["Forecasted Consumption - Daily"], ["0.0"] * 4)
+        self.assertEqual(cells["Forecasted Consumption"], ["0.0"] * 4)
         self.assertEqual(cells["Unused/Overage Credit - Total"], ["1,000.0"] * 4)
         self.assertEqual(cells["Forecast outcome"], ["Unused estimate"] * 4)
 
-    def test_missing_day_does_not_produce_false_overage(self):
+    def test_missing_day_is_zero_filled_with_explicit_counts(self):
         output, cells = self.check_run(fixture(missing_day=True))
-        self.assertFalse(cells)
-        self.assertIn("Forecast unavailable (EUR): Missing daily usage records.", output)
+        self.assertEqual(cells["Coverage"], ["0/1", "6/7", "29/30", "89/90"])
+        self.assertEqual(cells["Forecasted Consumption - Daily"], ["0.0", "171.4", "193.3", "197.8"])
+        self.assertEqual(cells["Forecast outcome"], ["Unused estimate", "Overage estimate", "Overage estimate", "Overage estimate"])
+        self.assertIn("Previous day: 1 day | Last 7 days: 1 day | Last 30 days: 1 day | Last 90 days: 1 day", output)
+        self.assertIn("\n\nMissing daily records treated as zero:", output)
 
 
 if __name__ == "__main__":

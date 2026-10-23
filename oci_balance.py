@@ -380,7 +380,7 @@ def consumption_trend(rows, currency):
     rates = {row["label"]: row["rate"] for row in rows}
     quarter, week = rates.get("Last 90 days"), rates.get("Last 7 days")
     if quarter is None or week is None:
-        return "Consumption trend: unavailable: complete 90-day and 7-day baselines required."
+        return "Consumption trend: unavailable: valid 90-day and 7-day cost baselines required."
     comparison = f"7-day average {number(week)} {shown(currency)}/day vs 90-day average {number(quarter)} {shown(currency)}/day"
     if quarter == 0:
         detail = "no consumption in either window" if week == 0 else "consumption resumed from a zero baseline"
@@ -422,16 +422,14 @@ def forecast_rows(record, daily, as_of, history_start=None):
     for days, label in ((90, "Last 90 days"), (30, "Last 30 days"), (7, "Last 7 days"), (1, "Previous day")):
         first = cutoff - timedelta(days=days)
         dates = [(first + timedelta(days=i)).date() for i in range(days)]
-        covered = sum(day in daily for day in dates)
+        reported = [day for day in dates if day in daily and
+                    (history_start is None or day >= history_start.date())]
+        covered = len(reported)
         reason = horizon_error
-        if history_start is not None and history_start > first:
-            reason = "Service history shorter than window"
-        if covered != days:
-            reason = "Missing daily usage records"
-        total = sum((daily.get(day, Decimal(0)) for day in dates), Decimal(0))
+        total = sum((daily[day] for day in reported), Decimal(0))
         if total < 0:
             reason = "Negative net consumption"
-        rate = total / Decimal(days) if covered == days and total >= 0 and (history_start is None or history_start <= first) else None
+        rate = total / Decimal(days) if total >= 0 else None
         unused = beyond = extra = None
         if reason is None:
             remaining_days = Decimal(str((end - as_of).total_seconds())) / Decimal(86400)
@@ -440,6 +438,7 @@ def forecast_rows(record, daily, as_of, history_start=None):
             beyond = max(Decimal(0), extra - available)
         result.append({"label": label, "first": first.date(), "last": dates[-1],
                        "coverage": f"{covered}/{days}", "rate": rate,
+                       "missing": days - covered,
                        "unused": unused, "beyond": beyond, "future": extra, "reason": reason})
     return result
 
@@ -451,7 +450,9 @@ def forecast_inputs(service, currency, as_of, groups, usage_error=None, daily_ov
             daily = daily_override
             usage_error = None
         else:
-            daily = daily_usage(groups or [], service.get("id"), currency, cutoff) if service.get("id") else {}
+            if not service.get("id") or not currency:
+                raise ValueError("Missing service identifier or currency.")
+            daily = daily_usage(groups or [], service.get("id"), currency, cutoff)
     except ValueError as exc:
         daily, usage_error = {}, str(exc)
     latest = max(daily).isoformat() if daily else "No matching usage returned"
@@ -505,8 +506,10 @@ def render_recent_forecast(service, currency, as_of, groups, usage_error=None, d
     required = remaining / horizon_days if remaining is not None and horizon_days > 0 else None
     scenarios = list(reversed(rows))
     print("Baseline")
+    baseline_width = max(len(row["label"] + " (UTC)") for row in scenarios)
     for row in scenarios:
-        print(f"{row['label']} (UTC): {row['first']} - {row['last']}")
+        label = (row["label"] + " (UTC)").rjust(baseline_width)
+        print(f"{label}: {row['first']} - {row['last']}")
     print()
     print("Monthly calculation: 744 hours = 31 days.")
     print()
@@ -514,13 +517,13 @@ def render_recent_forecast(service, currency, as_of, groups, usage_error=None, d
         [f"Metric ({shown(currency)})", *[styled(row["label"], "36") for row in scenarios]],
         [
             ["Remaining Credit", *[number(remaining) for row in scenarios]],
-            [styled("Future Consumption", "36"), *[number(row["future"]) for row in scenarios]],
+            [styled("Forecasted Consumption", "36"), *[number(row["future"]) for row in scenarios]],
             ["Unused/Overage Credit - Total", *[forecast_credit(row) for row in scenarios]],
             ["Required Consumption - Daily", *[number(required) for row in scenarios]],
-            [styled("Actual Consumption - Daily", "36"), *[number(row["rate"]) for row in scenarios]],
+            [styled("Forecasted Consumption - Daily", "36"), *[number(row["rate"]) for row in scenarios]],
             ["Unused/Overage Credit - Daily", *[forecast_credit(row, horizon_days) for row in scenarios]],
             ["Required Consumption - Monthly", *[number(required * Decimal(31)) if required is not None else "—" for row in scenarios]],
-            [styled("Actual Consumption - Monthly", "36"), *[number(row["rate"] * Decimal(31)) if row["rate"] is not None else "—" for row in scenarios]],
+            [styled("Forecasted Consumption - Monthly", "36"), *[number(row["rate"] * Decimal(31)) if row["rate"] is not None else "—" for row in scenarios]],
             ["Unused/Overage Credit - Monthly", *[forecast_credit(row, horizon_days, factor=Decimal(31)) for row in scenarios]],
             ["Days to horizon", *[f"{number(horizon_days)} Days" for row in scenarios]],
             ["Coverage", *[row["coverage"] for row in scenarios]],
@@ -529,6 +532,7 @@ def render_recent_forecast(service, currency, as_of, groups, usage_error=None, d
                 else "Balanced estimate") for row in scenarios]],
         ],
         right_columns=(1, 2, 3, 4),
+        right_label_rows=tuple(range(3, 9)),
         group_starts=(3, 6, 9),
     )
     reasons = {}
@@ -538,31 +542,36 @@ def render_recent_forecast(service, currency, as_of, groups, usage_error=None, d
     for reason, labels in reasons.items():
         print(textwrap.fill(f"N/A ({', '.join(labels)}): {reason}", width=78))
     print()
-    print(consumption_trend(rows, currency))
+    print("Missing daily records treated as zero: " + " | ".join(
+        f"{row['label']}: {row['missing']} {'day' if row['missing'] == 1 else 'days'}" for row in scenarios) + ".")
+    print("Averages use the full baseline window; dates before service start are also zero-filled.")
+    print()
+    trend = consumption_trend(rows, currency)
+    print(styled("Consumption trend:", "34") + trend[len("Consumption trend:"):])
     print()
     print("Estimate = remaining credit - future consumption, minimum zero.")
-    print("Missing days are not treated as zero.")
     print("Reported usage may still be delayed or revised.")
 
 
-def table(headers, rows, right_columns=(), group_starts=()):
+def table(headers, rows, right_columns=(), group_starts=(), right_label_rows=()):
     def plain(value):
         return re.sub(r"\x1b\[[0-9;]*m", "", str(value))
     widths = [max(len(plain(row[i])) for row in [headers, *rows]) for i in range(len(headers))]
     numeric_columns = [i in right_columns or all(str(row[i]) == "—" or re.fullmatch(r"-?[\d,]+(?:\.\d)?\*?", str(row[i])) for row in rows)
                        for i in range(len(headers))]
-    def line(row, is_header=False):
+    def line(row, is_header=False, row_index=None):
         cells = []
         for i, cell in enumerate(row):
             padding = " " * (widths[i] - len(plain(cell)))
-            cells.append(padding + str(cell) if numeric_columns[i] and not is_header else str(cell) + padding)
+            right = (numeric_columns[i] or (i == 0 and row_index in right_label_rows)) and not is_header
+            cells.append(padding + str(cell) if right else str(cell) + padding)
         return " | ".join(cells).rstrip()
     print(line(headers, True))
     print("-+-".join("-" * width for width in widths))
     for index, row in enumerate(rows):
         if index in group_starts:
             print("-+-".join("-" * width for width in widths))
-        print(line(row))
+        print(line(row, row_index=index))
 
 
 def cost_daily_override(subscription_id, summaries, service, currency, as_of, cost_usage):
@@ -703,7 +712,7 @@ def main(argv=None):
         return 1
     heading(f"OCI SUBSCRIPTION AND BALANCE REPORT ({tenancy_name(tenancy, args.region)})")
     print()
-    print("Report version: 2.3 | ahmet.bakkal@oracle.com")
+    print("Report version: 2.4 | ahmet.bakkal@oracle.com")
     print("Region note: Run Cloud Shell in the tenancy home region.")
     try:
         CLI_REGION = args.region or home_region(tenancy)
