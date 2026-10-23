@@ -37,13 +37,13 @@ python3 oci_balance.py --region eu-frankfurt-1 --include-history --as-of 2026-10
 
 ### Download the HTML report
 
-HTML is saved automatically under `~/oci-subscription-analyzer-reports/`, with a unique timestamped filename. Just above the end marker, the terminal prints only the home-relative code to paste into Cloud Shell's **Download file** dialog:
+HTML is saved automatically under `~/oci-subscription-analyzer-reports/`, with a unique timestamped filename. Just above the end marker, the terminal prints `Download:` followed by the home-relative path to paste into Cloud Shell's **Download file** dialog:
 
 ```text
 oci-subscription-analyzer-reports/oci-report-20261023-150000-123456.html
 ```
 
-Copy the path printed by your run; do not add `/` or `~/`. Open the downloaded HTML in a browser. It works offline, preserves colors and has a **Print / Save as PDF** button.
+Copy only the path after `Download:` printed by your run; do not add `/` or `~/`. Open the downloaded HTML in a browser. It works offline, preserves colors and has a **Print / Save as PDF** button.
 
 ```bash
 python3 oci_balance.py --output-dir customer-reports
@@ -137,4 +137,4 @@ The suite includes HTML/frame tests and seven end-to-end scenarios using a tempo
 
 See [overage test report](overage-test-report.md), [full overage output](examples/sample-output-overage.txt) and [exhausted-credit output](examples/sample-output-exhausted.txt).
 
-Version **2.7** · ahmet.bakkal@oracle.com
+Version **2.8** · ahmet.bakkal@oracle.com

@@ -112,7 +112,7 @@ class HtmlExportTests(unittest.TestCase):
             files = list((root / "oci-subscription-analyzer-reports").glob("*.html"))
             self.assertEqual(len(files), 1)
             relative = files[0].relative_to(root).as_posix()
-            self.assertIn("\n\n" + relative + "\n\n*END OF THE REPORT*", output)
+            self.assertIn("\n\nDownload: " + relative + "\n\n*END OF THE REPORT*", output)
             self.assertNotIn(str(root), output)
             self.assertFalse(relative.startswith(("/", "~/")))
             self.assertNotIn("\033", output)
@@ -132,7 +132,7 @@ class HtmlExportTests(unittest.TestCase):
             status, output, _ = self.run_local(root, ["--output-dir", "customer-reports"])
             self.assertEqual(status, 0)
             self.assertEqual(len(list((root / "customer-reports").glob("*.html"))), 1)
-            self.assertIn("\ncustomer-reports/oci-report-", output)
+            self.assertIn("\nDownload: customer-reports/oci-report-", output)
             self.assertFalse((root / "oci-subscription-analyzer-reports").exists())
 
     def test_no_html_does_not_create_an_output_folder(self):

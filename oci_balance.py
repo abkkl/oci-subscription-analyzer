@@ -542,7 +542,7 @@ def report_footer(destination=None):
     if destination is not None:
         try:
             relative = destination.relative_to(Path.home().resolve())
-            lines.append(relative.as_posix())
+            lines.append(f"Download: {relative.as_posix()}")
         except ValueError:
             lines.append("HTML exported outside home; Cloud Shell Download file cannot access this location.")
         lines.append("")
@@ -904,7 +904,7 @@ def run_terminal_report(args, as_of, tenancy):
     print()
     heading(f"OCI SUBSCRIPTION AND BALANCE REPORT ({tenancy_name(tenancy, args.region)})")
     print()
-    print("Report version: 2.7 | ahmet.bakkal@oracle.com")
+    print("Report version: 2.8 | ahmet.bakkal@oracle.com")
     print("Region note: Run Cloud Shell in the tenancy home region.")
     try:
         CLI_REGION = args.region or home_region(tenancy)
