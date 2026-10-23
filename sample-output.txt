@@ -24,19 +24,16 @@ Promo credit | Service total | Funded | Consumed | Remaining | Overage
 
 Commitment periods: 0
 
-FORECAST
+FORECAST - Horizon: Service contract end | 2026-11-02 (TRY)
 
 Balance snapshot UTC: 2026-10-23 00:00:00
 Latest reported completed usage day (UTC): 2026-10-22
-Forecast horizon: Service contract end | 2026-11-02 (UTC)
-Amounts: TRY | 1 month = 30 complete UTC days.
-Windows start (UTC): 30 days = 2026-09-23 | 7 days = 2026-10-16
 
-Baseline     | Avg/day | Unused at end | Overage at end | Coverage | Contract days left | Result
--------------+---------+---------------+----------------+----------+--------------------+---------
-Last 30 days |   10.00 |      8,900.00 |           0.00 | 30/30    | 10                 | Estimate
-Last 7 days  |   10.00 |      8,900.00 |           0.00 | 7/7      | 10                 | Estimate
-Previous day |   10.00 |      8,900.00 |           0.00 | 1/1      | 10                 | Estimate
+Baseline                               | Avg/day Consumption | Remaining Credit | Future Consumption | Unused Credit at End - Total | Unused Credit at End - Daily | Overage Credit at End | Contract days left | Coverage | Result
+---------------------------------------+---------------------+------------------+--------------------+------------------------------+------------------------------+-----------------------+--------------------+----------+---------
+Last 30 days (2026-09-23 - 2026-10-22) |               10.00 |         9,000.00 |             100.00 |                     8,900.00 |                       890.00 |                  0.00 | 10                 | 30/30    | Estimate
+Last 7 days (2026-10-16 - 2026-10-22)  |               10.00 |         9,000.00 |             100.00 |                     8,900.00 |                       890.00 |                  0.00 | 10                 | 7/7      | Estimate
+Previous day (2026-10-22 - 2026-10-22) |               10.00 |         9,000.00 |             100.00 |                     8,900.00 |                       890.00 |                  0.00 | 10                 | 1/1      | Estimate
 
 Estimate = remaining credit - future consumption, minimum zero.
 Missing days are not treated as zero.

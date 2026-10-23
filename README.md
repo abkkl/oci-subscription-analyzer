@@ -65,19 +65,16 @@ Promo credit | Service total | Funded | Consumed | Remaining | Overage
 
 Commitment periods: 0
 
-FORECAST
+FORECAST - Horizon: Service contract end | 2026-11-02 (TRY)
 
 Balance snapshot UTC: 2026-10-23 00:00:00
 Latest reported completed usage day (UTC): 2026-10-22
-Forecast horizon: Service contract end | 2026-11-02 (UTC)
-Amounts: TRY | 1 month = 30 complete UTC days.
-Windows start (UTC): 30 days = 2026-09-23 | 7 days = 2026-10-16
 
-Baseline     | Avg/day | Unused at end | Overage at end | Coverage | Contract days left | Result
--------------+---------+---------------+----------------+----------+--------------------+---------
-Last 30 days |   10.00 |      8,900.00 |           0.00 | 30/30    | 10                 | Estimate
-Last 7 days  |   10.00 |      8,900.00 |           0.00 | 7/7      | 10                 | Estimate
-Previous day |   10.00 |      8,900.00 |           0.00 | 1/1      | 10                 | Estimate
+Baseline                               | Avg/day Consumption | Remaining Credit | Future Consumption | Unused Credit at End - Total | Unused Credit at End - Daily | Overage Credit at End | Contract days left | Coverage | Result
+---------------------------------------+---------------------+------------------+--------------------+------------------------------+------------------------------+-----------------------+--------------------+----------+---------
+Last 30 days (2026-09-23 - 2026-10-22) |               10.00 |         9,000.00 |             100.00 |                     8,900.00 |                       890.00 |                  0.00 | 10                 | 30/30    | Estimate
+Last 7 days (2026-10-16 - 2026-10-22)  |               10.00 |         9,000.00 |             100.00 |                     8,900.00 |                       890.00 |                  0.00 | 10                 | 7/7      | Estimate
+Previous day (2026-10-22 - 2026-10-22) |               10.00 |         9,000.00 |             100.00 |                     8,900.00 |                       890.00 |                  0.00 | 10                 | 1/1      | Estimate
 
 Estimate = remaining credit - future consumption, minimum zero.
 Missing days are not treated as zero.
@@ -155,7 +152,7 @@ If the service has not existed for the full window, or net consumption is negati
 
 ### Confirm which version is running
 
-This revision prints `Report version: 1.4` near the top. If you see three separate forecast tables or a separate empty zero-credit service section, you are running an earlier version. Until you publish your updated files to GitHub, downloading from the repository's `main` URL will continue to fetch the previously published version. Upload the revised `oci_balance.py` to Cloud Shell and run `python3 ~/oci_balance.py` to test it first.
+This revision prints `Report version: 1.5` near the top. If you see three separate forecast tables or a separate empty zero-credit service section, you are running an earlier version. Until you publish your updated files to GitHub, downloading from the repository's `main` URL will continue to fetch the previously published version. Upload the revised `oci_balance.py` to Cloud Shell and run `python3 ~/oci_balance.py` to test it first.
 
 For a reproducible reference date:
 
@@ -214,8 +211,12 @@ Contract countdowns use UTC calendar dates: whole calendar months plus remaining
 
 ### Actual overage
 
-In each balances table, `Overage` sums only explicit `OVERAGE` usage records for that service and currency, requested from the service contract start through the report snapshot. Other usage types (including PAY_AS_YOU_GO) are not classified as overage. Signed adjustments are retained. This is the net overage in records returned by OCI, not a certified invoice total; API retention, delayed records, or revisions can affect it. Missing or untyped matching records show `—`, not zero. The forecast `Overage at end` column estimates additional future consumption beyond the remaining credit; it does not add already reported actual overage. Long contracts can take longer to retrieve because all usage pages are requested.
+In each balances table, `Overage` sums only explicit `OVERAGE` usage records for that service and currency, requested from the service contract start through the report snapshot. Other usage types (including PAY_AS_YOU_GO) are not classified as overage. Signed adjustments are retained. This is the net overage in records returned by OCI, not a certified invoice total; API retention, delayed records, or revisions can affect it. Missing or untyped matching records show `—`, not zero. The forecast `Overage Credit at End` column estimates additional future consumption beyond the remaining credit; it does not add already reported actual overage. Long contracts can take longer to retrieve because all usage pages are requested.
 
 The usage type and amount fields are documented in [Oracle ComputedUsageAggregation](https://docs.oracle.com/en-us/iaas/tools/python/latest/api/osub_usage/models/oci.osub_usage.models.ComputedUsageAggregation.html).
 
-Forecast layout: `Coverage` shows available daily records for each baseline. `Contract days left` shows whole UTC calendar days from the report date to the service contract end, excluding today (zero for expired contracts). This can differ from the active commitment horizon explicitly shown above the forecast. `Overage at end` remains max(0, daily rate × fractional days to the stated forecast horizon − reported remaining credit); it is future overage through that horizon and excludes actual overage already shown in balances.
+Forecast layout: `Coverage` shows available daily records for each baseline. `Contract days left` shows whole UTC calendar days from the report date to the service contract end, excluding today (zero for expired contracts). This can differ from the active commitment horizon explicitly shown above the forecast. `Overage Credit at End` remains max(0, daily rate × fractional days to the stated forecast horizon − reported remaining credit); it is future overage through that horizon and excludes actual overage already shown in balances.
+
+### Forecast columns
+
+Each baseline includes its complete UTC date range. The heading includes the forecast horizon, end date and currency. `Avg/day Consumption` is the baseline daily average; `Remaining Credit` is the reported balance of the forecast pool (the active commitment when applicable). `Future Consumption` uses that average times the fractional days remaining to the stated forecast horizon. `Unused Credit at End - Total` is max(0, remaining credit minus future consumption). `Unused Credit at End - Daily` divides that total by `Contract days left`, which uses UTC calendar dates and the service contract end; it is unavailable when no days remain or the date is missing. `Overage Credit at End` is max(0, future consumption minus remaining credit), excluding previously reported actual overage. `Contract days left` appears before `Coverage`. The full table requires a wide terminal.

@@ -185,11 +185,11 @@ class ForecastTests(unittest.TestCase):
         output = io.StringIO()
         with contextlib.redirect_stdout(output):
             report.render_recent_forecast(service_record, "EUR", self.now, [])
-        self.assertIn("Forecast horizon: Active commitment end | 2026-11-01 (UTC)", output.getvalue())
-        self.assertIn("Overage at end", output.getvalue())
+        self.assertIn("FORECAST - Horizon: Active commitment end | 2026-11-01 (EUR)", output.getvalue())
+        self.assertIn("Overage Credit at End", output.getvalue())
         self.assertIn("Contract days left", output.getvalue())
         forecast_lines = [line for line in output.getvalue().splitlines() if line.startswith("Last 30 days")]
-        self.assertEqual(forecast_lines[0].split("|")[-2].strip(), "10")
+        self.assertEqual(forecast_lines[0].split("|")[-3].strip(), "10")
 
     def test_main_requests_daily_usage_and_keeps_balance_on_usage_failure(self):
         calls = []
@@ -258,9 +258,19 @@ class CostAnalysisTests(unittest.TestCase):
         self.assertNotIn("Source:", text)
         self.assertNotIn("Scope:", text)
         self.assertNotIn("Assumption:", text)
-        self.assertIn("FORECAST\n\nBalance snapshot", text)
-        self.assertEqual(text.count("FORECAST\n"), 1)
-        self.assertEqual(text.count("Baseline     |"), 1)
+        self.assertIn("FORECAST - Horizon: Service contract end | 2026-11-02 (TRY)\n\nBalance snapshot", text)
+        self.assertEqual(text.count("FORECAST - Horizon:"), 1)
+        self.assertEqual(sum(line.startswith("Baseline") for line in text.splitlines()), 1)
+        self.assertIn("Last 30 days (2026-09-23 - 2026-10-22)", text)
+        self.assertNotIn("Windows start", text)
+        self.assertNotIn("Amounts:", text)
+        headers = next(line for line in text.splitlines() if line.startswith("Baseline"))
+        values = next(line for line in text.splitlines() if line.startswith("Last 30 days"))
+        cells = dict(zip([c.strip() for c in headers.split("|")], [c.strip() for c in values.split("|")]))
+        self.assertEqual(cells["Future Consumption"], "100.00")
+        self.assertEqual(cells["Remaining Credit"], "9,000.00")
+        self.assertEqual(cells["Unused Credit at End - Total"], "8,900.00")
+        self.assertEqual(cells["Unused Credit at End - Daily"], "890.00")
         self.assertNotIn("SERVICE 2", text)
         self.assertIn("STANDARD — Example credits omitted", text)
 

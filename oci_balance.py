@@ -262,7 +262,7 @@ def forecast_rows(record, daily, as_of, history_start=None):
         if total < 0:
             reason = "Negative net consumption"
         rate = total / Decimal(days) if covered == days and total >= 0 and (history_start is None or history_start <= first) else None
-        unused = beyond = None
+        unused = beyond = extra = None
         if reason is None:
             remaining_days = Decimal(str((end - as_of).total_seconds())) / Decimal(86400)
             extra = rate * remaining_days
@@ -270,16 +270,12 @@ def forecast_rows(record, daily, as_of, history_start=None):
             beyond = max(Decimal(0), extra - available)
         result.append({"label": label, "first": first.date(), "last": dates[-1],
                        "coverage": f"{covered}/{days}", "rate": rate,
-                       "unused": unused, "beyond": beyond, "reason": reason})
+                       "unused": unused, "beyond": beyond, "future": extra, "reason": reason})
     return result
 
 
 def render_recent_forecast(service, currency, as_of, groups, usage_error=None, daily_override=None):
     cutoff = as_of.replace(hour=0, minute=0, second=0, microsecond=0)
-    print()
-    heading("FORECAST")
-    print()
-    print(f"Balance snapshot UTC: {as_of.strftime('%Y-%m-%d %H:%M:%S')}")
     try:
         if daily_override is not None:
             daily = daily_override
@@ -289,7 +285,6 @@ def render_recent_forecast(service, currency, as_of, groups, usage_error=None, d
     except ValueError as exc:
         daily, usage_error = {}, str(exc)
     latest = max(daily).isoformat() if daily else "No matching usage returned"
-    print(f"Latest reported completed usage day (UTC): {latest}")
     target = service
     scope = "Service contract end"
     commitments = service.get("commitment-services") or []
@@ -306,23 +301,30 @@ def render_recent_forecast(service, currency, as_of, groups, usage_error=None, d
     if service.get("status") not in (None, "ACTIVE"):
         target = {}
         scope = "Unavailable: service is not ACTIVE"
-    print(f"Forecast horizon: {scope} | {date(target.get('time-end'))} (UTC)")
+    print()
+    heading(f"FORECAST - Horizon: {scope} | {date(target.get('time-end'))} ({shown(currency)})")
+    print()
+    print(f"Balance snapshot UTC: {as_of.strftime('%Y-%m-%d %H:%M:%S')}")
+    print(f"Latest reported completed usage day (UTC): {latest}")
     if commitments:
         print("Future renewals and credit rollover are not forecast.")
-    print(f"Amounts: {shown(currency)} | 1 month = 30 complete UTC days.")
     rows = forecast_rows(target, daily, as_of, timestamp(service.get("time-start")))
     if usage_error:
         print(f"Usage unavailable: {usage_error}")
         for row in rows:
-            row.update(rate=None, unused=None, beyond=None, reason="Usage request failed")
-    print(f"Windows start (UTC): 30 days = {rows[0]['first']} | 7 days = {rows[1]['first']}")
+            row.update(rate=None, unused=None, beyond=None, future=None, reason="Usage request failed")
     print()
     contract_end = timestamp(service.get("time-end"))
-    contract_days = str(max(0, (contract_end.date() - as_of.date()).days)) if contract_end else "—"
+    contract_days = max(0, (contract_end.date() - as_of.date()).days) if contract_end else None
+    remaining = decimal_value(target.get("available-amount"))
     table(
-        ["Baseline", "Avg/day", "Unused at end", "Overage at end", "Coverage", "Contract days left", "Result"],
-        [[row["label"], number(row["rate"]), number(row["unused"]),
-          number(row["beyond"]), row["coverage"], contract_days, "N/A" if row["reason"] else "Estimate"]
+        ["Baseline", "Avg/day Consumption", "Remaining Credit", "Future Consumption",
+         "Unused Credit at End - Total", "Unused Credit at End - Daily", "Overage Credit at End",
+         "Contract days left", "Coverage", "Result"],
+        [[f"{row['label']} ({row['first']} - {row['last']})", number(row["rate"]),
+          number(remaining), number(row["future"]), number(row["unused"]),
+          number(row["unused"] / Decimal(contract_days) if row["unused"] is not None and contract_days else None),
+          number(row["beyond"]), shown(contract_days), row["coverage"], "N/A" if row["reason"] else "Estimate"]
          for row in rows],
     )
     reasons = {}
@@ -443,7 +445,7 @@ def main(argv=None):
         print("ERROR: OCI_TENANCY is missing. Run this script in OCI Cloud Shell.", file=sys.stderr)
         return 1
     print("OCI SUBSCRIPTION AND BALANCE REPORT")
-    print("Report version: 1.4 | Consolidated balances, overage and forecasts")
+    print("Report version: 1.5 | Consolidated balances, overage and forecasts")
     print("Region note: Run Cloud Shell in the tenancy home region.")
     try:
         CLI_REGION = home_region(tenancy)
