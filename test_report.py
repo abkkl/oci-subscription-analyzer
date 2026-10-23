@@ -36,7 +36,7 @@ class LayoutAndMetadataTests(unittest.TestCase):
     def test_contract_countdown_shows_years_months_days(self):
         now = datetime(2026, 10, 23, tzinfo=timezone.utc)
         self.assertEqual(report.contract_countdown("2028-11-03T23:59:59Z", now),
-                         "2028-11-03 | 2 years 0 months 11 days remaining (742 days total)")
+                         "2028-11-03 | 2 years 11 days remaining (742 days total)")
 
     def test_trend_comment_is_one_line_in_requested_format(self):
         # Raw API rates round to 24.1 and 19.7 with a 22.2% increase.
@@ -49,10 +49,10 @@ class LayoutAndMetadataTests(unittest.TestCase):
         fixture.now = now
         summary = fixture.summaries()
         output = io.StringIO()
-        with contextlib.redirect_stdout(output):
+        with patch.object(report.shutil, "get_terminal_size", return_value=os.terminal_size((80, 24))), contextlib.redirect_stdout(output):
             report.render("example", summary, now, cost_usage=fixture.costs())
         text = output.getvalue()
-        self.assertIn("\n" + "=" * 156 + "\nSUBSCRIPTION", text)
+        self.assertIn("\n" + "=" * 79 + "\nSUBSCRIPTION", text)
         self.assertRegex(text, r"\n\nOverage audit \(UTC\):[^\n]+\n\nCommitment periods")
         self.assertRegex(text, r"Comment: Consumption trend:[^\n]+\n\nEstimate =")
 
@@ -155,11 +155,11 @@ class ReportTests(unittest.TestCase):
     def test_contract_countdown_uses_calendar_months_and_total_utc_days(self):
         now = datetime(2026, 10, 23, 10, tzinfo=timezone.utc)
         self.assertEqual(report.contract_countdown("2027-01-15T23:59:59Z", now),
-                         "2027-01-15 | 0 years 2 months 23 days remaining (84 days total)")
+                         "2027-01-15 | 2 months 23 days remaining (84 days total)")
         self.assertIn("Ends today", report.contract_countdown("2026-10-23T23:59:59Z", now))
         self.assertIn("Expired", report.contract_countdown("2026-10-22T23:59:59Z", now))
         self.assertEqual(report.contract_countdown(None, now), "Unavailable")
-        self.assertIn("1 months 0 days", report.contract_countdown(
+        self.assertIn("1 month remaining", report.contract_countdown(
             "2027-02-28T23:59:59Z", datetime(2027, 1, 31, tzinfo=timezone.utc)))
 
     def setUp(self):
@@ -299,6 +299,24 @@ class ForecastTests(unittest.TestCase):
         self.assertEqual(str(month["first"]), "2026-09-23")
         self.assertEqual(str(previous["last"]), "2026-10-22")
 
+    def test_compact_forecast_column_and_metric_order(self):
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            report.render_recent_forecast(self.record, "EUR", self.now, [], daily_override=self.daily)
+        lines = output.getvalue().splitlines()
+        start = next(i for i, line in enumerate(lines) if line.startswith("Metric"))
+        stop = next(i for i in range(start, len(lines)) if lines[i].startswith("Result"))
+        block = lines[start:stop + 1]
+        self.assertEqual([c.strip() for c in block[0].split("|")],
+                         ["Metric", "Previous day", "Last 7 days", "Last 30 days"])
+        self.assertEqual([line.split("|")[0].strip() for line in block[2:]], [
+            "Avg/day Consumption", "Required/day Consumption", "Remaining Credit", "Future Consumption",
+            "Unused Credit at End - Total", "Unused Credit at End - Daily", "Overage Credit at End",
+            "Days to horizon", "Coverage", "Result"])
+        self.assertEqual([c.strip() for c in block[2].split("|")][1:], ["100.0", "31.4", "15.0"])
+        self.assertEqual([c.strip() for c in block[-1].split("|")][1:], ["Estimate"] * 3)
+        self.assertTrue(all(len(line) <= 80 for line in block))
+
     def test_missing_previous_day_is_not_zero_consumption(self):
         del self.daily[(self.now - timedelta(days=1)).date()]
         rows = report.forecast_rows(self.record, self.daily, self.now)
@@ -345,8 +363,8 @@ class ForecastTests(unittest.TestCase):
         self.assertIn("FORECAST (EUR) | Horizon: Active commitment end - 2026-11-01", output.getvalue())
         self.assertIn("Overage Credit at End", output.getvalue())
         self.assertIn("Days to horizon", output.getvalue())
-        forecast_lines = [line for line in output.getvalue().splitlines() if line.startswith("Last 30 days")]
-        self.assertEqual(forecast_lines[0].split("|")[-3].strip(), "9.0")
+        forecast_lines = [line for line in output.getvalue().splitlines() if line.startswith("Days to horizon")]
+        self.assertEqual(forecast_lines[0].split("|")[-1].strip(), "9.0")
 
     def test_daily_values_share_the_fractional_commitment_horizon(self):
         record = dict(self.record, **{"time-end": "2028-11-03T23:59:59Z", "commitment-services": [
@@ -357,9 +375,7 @@ class ForecastTests(unittest.TestCase):
         with contextlib.redirect_stdout(output):
             report.render_recent_forecast(record, "TRY", now, [], daily_override=daily)
         lines = output.getvalue().splitlines()
-        headers = [cell.strip() for cell in next(line for line in lines if line.startswith("Baseline")).split("|")]
-        values = [cell.strip() for cell in next(line for line in lines if line.startswith("Last 30 days")).split("|")]
-        cells = dict(zip(headers, values))
+        cells = {line.split("|")[0].strip(): line.split("|")[-1].strip() for line in lines if "|" in line}
         self.assertEqual(cells["Days to horizon"], "0.5")
         self.assertEqual(cells["Required/day Consumption"], "200.0")
         self.assertEqual(cells["Future Consumption"], "5.0")
@@ -388,7 +404,7 @@ class ForecastTests(unittest.TestCase):
         with contextlib.redirect_stdout(output):
             report.render_recent_forecast(self.record, "EUR", self.now, [],
                                           daily_override={yesterday: Decimal(10)})
-        self.assertIn("Baseline", output.getvalue())
+        self.assertIn("Metric", output.getvalue())
         self.assertIn("Previous day", output.getvalue())
         self.assertIn("Estimate", output.getvalue())
         self.assertNotIn("Forecast unavailable", output.getvalue())
@@ -462,13 +478,11 @@ class CostAnalysisTests(unittest.TestCase):
         self.assertNotIn("Assumption:", text)
         self.assertIn("FORECAST (TRY) | Horizon: Service contract end - 2026-11-02\n\nBalance snapshot", text)
         self.assertEqual(text.count("FORECAST (TRY) | Horizon:"), 1)
-        self.assertEqual(sum(line.startswith("Baseline") for line in text.splitlines()), 1)
-        self.assertIn("Last 30 days (2026-09-23 - 2026-10-22)", text)
+        self.assertEqual(sum(line.startswith("Metric") for line in text.splitlines()), 1)
+        self.assertIn("Last 30 days (UTC): 2026-09-23 - 2026-10-22", text)
         self.assertNotIn("Windows start", text)
         self.assertNotIn("Amounts:", text)
-        headers = next(line for line in text.splitlines() if line.startswith("Baseline"))
-        values = next(line for line in text.splitlines() if line.startswith("Last 30 days"))
-        cells = dict(zip([c.strip() for c in headers.split("|")], [c.strip() for c in values.split("|")]))
+        cells = {line.split("|")[0].strip(): line.split("|")[-1].strip() for line in text.splitlines() if "|" in line}
         self.assertEqual(cells["Future Consumption"], "100.0")
         self.assertEqual(cells["Remaining Credit"], "9,000.0")
         self.assertEqual(cells["Unused Credit at End - Total"], "8,900.0")

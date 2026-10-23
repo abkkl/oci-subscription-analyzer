@@ -41,9 +41,9 @@ The download command uses the version published on GitHub. To run a locally supp
 
 ## Report contents
 
-- Colored tenant/subscription/service headings and contract countdowns in years, months and days.
+- Colored tenant/subscription/service headings, terminal-width separators and contract countdowns in years, months and days (zero components omitted).
 - Balances, reported overage and commitment periods with active/past/future status and remaining days.
-- Three forecast scenarios: last 30 complete UTC days, last 7 days and previous day.
+- Compact forecast: metrics as rows; columns ordered Previous day, Last 7 days, Last 30 days. Exact UTC date ranges appear above the table.
 - Consumption trend: 7-day versus 30-day average.
 - Summarized history and omission notes for empty zero-credit services. When history exists, one reminder to use `--include-history` appears just before the final subscription counts.
 
@@ -55,7 +55,7 @@ The horizon is the **unique active commitment's end**, or the service contract e
 
 Let `B` = remaining credit, `R` = baseline daily consumption and `D` = fractional days to the forecast horizon:
 
-| Column | Meaning |
+| Metric | Meaning |
 | --- | --- |
 | Avg/day Consumption | `R`, from the baseline's complete daily records. |
 | Required/day Consumption | `B / D`, needed to use all credit by the horizon. |
@@ -89,9 +89,9 @@ Report excerpt (fictional data; full output linked above):
 ```text
 OCI SUBSCRIPTION AND BALANCE REPORT (Example Tenant)
 
-Report version: 1.8 | ahmet.bakkal@oracle.com
+Report version: 1.9 | ahmet.bakkal@oracle.com
 ...
-Contract end (UTC): 2027-11-03 | 1 years 0 months 11 days remaining (376 days total)
+Contract end (UTC): 2027-11-03 | 1 year 11 days remaining (376 days total)
 
 Commitment periods: 3
 Status | Start UTC  | End UTC    | Remaining days
@@ -101,7 +101,20 @@ active | 2025-11-04 | 2026-11-03 |             11
 future | 2026-11-04 | 2027-11-03 |            365
 
 FORECAST (TRY) | Horizon: Active commitment end - 2026-11-03
-...
+
+Metric                       | Previous day | Last 7 days | Last 30 days
+-----------------------------+--------------+-------------+-------------
+Avg/day Consumption          |      1,200.0 |     1,028.6 |        470.0
+Required/day Consumption     |      2,608.7 |     2,608.7 |      2,608.7
+Remaining Credit             |     30,000.0 |    30,000.0 |     30,000.0
+Future Consumption           |     13,800.0 |    11,828.6 |      5,405.0
+Unused Credit at End - Total |     16,200.0 |    18,171.4 |     24,595.0
+Unused Credit at End - Daily |      1,408.7 |     1,580.1 |      2,138.7
+Overage Credit at End        |          0.0 |         0.0 |          0.0
+Days to horizon              |         11.5 |        11.5 |         11.5
+Coverage                     |          1/1 |         7/7 |        30/30
+Result                       |     Estimate |    Estimate |     Estimate
+
 Comment: Consumption trend: 7-day average 1,028.6 TRY/day vs 30-day average 470.0 TRY/day -> 118.8% higher; 2.2x the 30-day average.
 
 ...
@@ -130,4 +143,4 @@ python3 -m unittest discover -v
 
 Tests use fictional data and do not call OCI.
 
-Version **1.8** · ahmet.bakkal@oracle.com
+Version **1.9** · ahmet.bakkal@oracle.com

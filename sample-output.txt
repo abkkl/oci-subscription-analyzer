@@ -1,13 +1,13 @@
 OCI SUBSCRIPTION AND BALANCE REPORT (Example Tenant)
 
-Report version: 1.8 | ahmet.bakkal@oracle.com
+Report version: 1.9 | ahmet.bakkal@oracle.com
 Region note: Run Cloud Shell in the tenancy home region.
 Home region: eu-frankfurt-1 (selected automatically for API calls)
 
-============================================================================================================================================================
+===============================================================================
 SUBSCRIPTION example-active | ACTIVE | TRY
-============================================================================================================================================================
-Contract end (UTC): 2027-11-03 | 1 years 0 months 11 days remaining (376 days total)
+===============================================================================
+Contract end (UTC): 2027-11-03 | 1 year 11 days remaining (376 days total)
 End date based on reported service contract dates.
 
 ──────────────────────────────────────────────────────────────────────────────
@@ -17,7 +17,7 @@ Oracle PaaS and IaaS Universal Credits
 Status: ACTIVE
 Program: — | Model: Annual
 Period (UTC): 2024-11-04 → 2027-11-03
-Contract end (UTC): 2027-11-03 | 1 years 0 months 11 days remaining (376 days total)
+Contract end (UTC): 2027-11-03 | 1 year 11 days remaining (376 days total)
 
 BALANCES (TRY)
 Promo credit | Service total | Funded | Consumed  | Remaining | Overage (records)
@@ -40,11 +40,22 @@ Balance snapshot UTC: 2026-10-23 12:00:00
 Latest reported completed usage day (UTC): 2026-10-22
 Future renewals and credit rollover are not forecast.
 
-Baseline                               | Avg/day Consumption | Required/day Consumption | Remaining Credit | Future Consumption | Unused Credit at End - Total | Unused Credit at End - Daily | Overage Credit at End | Days to horizon | Coverage | Result
----------------------------------------+---------------------+--------------------------+------------------+--------------------+------------------------------+------------------------------+-----------------------+-----------------+----------+---------
-Last 30 days (2026-09-23 - 2026-10-22) |               470.0 |                  2,608.7 |         30,000.0 |            5,405.0 |                     24,595.0 |                      2,138.7 |                   0.0 |            11.5 | 30/30    | Estimate
-Last 7 days (2026-10-16 - 2026-10-22)  |             1,028.6 |                  2,608.7 |         30,000.0 |           11,828.6 |                     18,171.4 |                      1,580.1 |                   0.0 |            11.5 | 7/7      | Estimate
-Previous day (2026-10-22 - 2026-10-22) |             1,200.0 |                  2,608.7 |         30,000.0 |           13,800.0 |                     16,200.0 |                      1,408.7 |                   0.0 |            11.5 | 1/1      | Estimate
+Previous day (UTC): 2026-10-22 - 2026-10-22
+Last 7 days (UTC): 2026-10-16 - 2026-10-22
+Last 30 days (UTC): 2026-09-23 - 2026-10-22
+
+Metric                       | Previous day | Last 7 days | Last 30 days
+-----------------------------+--------------+-------------+-------------
+Avg/day Consumption          |      1,200.0 |     1,028.6 |        470.0
+Required/day Consumption     |      2,608.7 |     2,608.7 |      2,608.7
+Remaining Credit             |     30,000.0 |    30,000.0 |     30,000.0
+Future Consumption           |     13,800.0 |    11,828.6 |      5,405.0
+Unused Credit at End - Total |     16,200.0 |    18,171.4 |     24,595.0
+Unused Credit at End - Daily |      1,408.7 |     1,580.1 |      2,138.7
+Overage Credit at End        |          0.0 |         0.0 |          0.0
+Days to horizon              |         11.5 |        11.5 |         11.5
+Coverage                     |          1/1 |         7/7 |        30/30
+Result                       |     Estimate |    Estimate |     Estimate
 
 Comment: Consumption trend: 7-day average 1,028.6 TRY/day vs 30-day average 470.0 TRY/day -> 118.8% higher; 2.2x the 30-day average.
 
@@ -52,9 +63,9 @@ Estimate = remaining credit - future consumption, minimum zero.
 Missing days are not treated as zero.
 Reported usage may still be delayed or revised.
 
-============================================================================================================================================================
+===============================================================================
 SUBSCRIPTION example-history | ACTIVE | TRY
-============================================================================================================================================================
+===============================================================================
 Contract end (UTC): 2024-11-03 | Expired
 End date based on reported service contract dates.
 
