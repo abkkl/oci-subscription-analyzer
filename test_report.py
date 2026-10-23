@@ -186,6 +186,10 @@ class ForecastTests(unittest.TestCase):
         with contextlib.redirect_stdout(output):
             report.render_recent_forecast(service_record, "EUR", self.now, [])
         self.assertIn("Forecast horizon: Active commitment end | 2026-11-01 (UTC)", output.getvalue())
+        self.assertIn("Overage at end", output.getvalue())
+        self.assertIn("Contract days left", output.getvalue())
+        forecast_lines = [line for line in output.getvalue().splitlines() if line.startswith("Last 30 days")]
+        self.assertEqual(forecast_lines[0].split("|")[-2].strip(), "10")
 
     def test_main_requests_daily_usage_and_keeps_balance_on_usage_failure(self):
         calls = []

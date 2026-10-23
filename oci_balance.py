@@ -317,10 +317,12 @@ def render_recent_forecast(service, currency, as_of, groups, usage_error=None, d
             row.update(rate=None, unused=None, beyond=None, reason="Usage request failed")
     print(f"Windows start (UTC): 30 days = {rows[0]['first']} | 7 days = {rows[1]['first']}")
     print()
+    contract_end = timestamp(service.get("time-end"))
+    contract_days = str(max(0, (contract_end.date() - as_of.date()).days)) if contract_end else "—"
     table(
-        ["Baseline", "Avg/day", "Unused at end", "Overage", "Days", "Result"],
+        ["Baseline", "Avg/day", "Unused at end", "Overage at end", "Coverage", "Contract days left", "Result"],
         [[row["label"], number(row["rate"]), number(row["unused"]),
-          number(row["beyond"]), row["coverage"], "N/A" if row["reason"] else "Estimate"]
+          number(row["beyond"]), row["coverage"], contract_days, "N/A" if row["reason"] else "Estimate"]
          for row in rows],
     )
     reasons = {}
@@ -394,13 +396,10 @@ def render(subscription_id, summaries, as_of=None, usage=None, usage_error=None,
             print(f"Contract end (UTC): {contract_countdown(service.get('time-end'), as_of)}")
             print()
             heading(f"BALANCES ({shown(currency)})")
-            table(["Promo credit", "Service total", "Funded", "Consumed", "Remaining"],
-                  [[number(service.get(key)) for key in (
-                      "original-promo-amount", "total-value", "funded-allocation-value", "used-amount", "available-amount")]])
             overage = actual_overage(service, currency, usage, as_of) if not usage_error else None
-            print(f"Actual overage ({shown(currency)}): {number(overage)}")
-            if overage is None:
-                print("Actual overage unavailable: no usable typed usage returned for this service.")
+            table(["Promo credit", "Service total", "Funded", "Consumed", "Remaining", "Overage"],
+                  [[*[number(service.get(key)) for key in (
+                      "original-promo-amount", "total-value", "funded-allocation-value", "used-amount", "available-amount")], number(overage)]])
             commitments = service.get("commitment-services") or []
             print(f"\nCommitment periods: {len(commitments)}")
             if commitments:
@@ -444,7 +443,7 @@ def main(argv=None):
         print("ERROR: OCI_TENANCY is missing. Run this script in OCI Cloud Shell.", file=sys.stderr)
         return 1
     print("OCI SUBSCRIPTION AND BALANCE REPORT")
-    print("Report version: 1.3 | Consolidated balances, overage and forecasts")
+    print("Report version: 1.4 | Consolidated balances, overage and forecasts")
     print("Region note: Run Cloud Shell in the tenancy home region.")
     try:
         CLI_REGION = home_region(tenancy)
@@ -457,7 +456,6 @@ def main(argv=None):
     if not ids:
         print("No accessible subscriptions found.")
         return 0
-    print("— = No value returned by the API. Service and commitment amounts are not added together.")
     failed = 0
     for subscription_id in ids:
         try:

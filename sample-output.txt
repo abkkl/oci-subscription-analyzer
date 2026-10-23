@@ -1,27 +1,26 @@
 
 ==============================================================================
-SUBSCRIPTION example-subscription | ACTIVE | USD
+SUBSCRIPTION example | ACTIVE | TRY
 ==============================================================================
 Contract end (UTC): 2026-11-02 | 0 months 10 days remaining (10 days total)
 End date based on reported service contract dates.
 
-Note: B88206 — Oracle PaaS and IaaS Universal Credits omitted: zero reported
-credit and consumption (including commitment amounts).
+Note: STANDARD — Example credits omitted: zero reported credit and consumption
+(including commitment amounts).
 
 ──────────────────────────────────────────────────────────────────────────────
-SERVICE 1 | B89010
-Oracle Cloud Program - Universal Credits
+SERVICE 1 | PROMO
+Example credits
 ──────────────────────────────────────────────────────────────────────────────
 Status: ACTIVE
-Program: BYINVITE-POC-STD | Model: Pay As You Go
+Program: — | Model: —
 Period (UTC): 2026-08-01 → 2026-11-02
 Contract end (UTC): 2026-11-02 | 0 months 10 days remaining (10 days total)
 
-BALANCES (USD)
-Promo credit | Service total | Funded | Consumed | Remaining
--------------+---------------+--------+----------+----------
-   10,000.00 |          0.00 |      — | 1,250.00 |  8,750.00
-Actual overage (USD): 0.00
+BALANCES (TRY)
+Promo credit | Service total | Funded | Consumed | Remaining | Overage
+-------------+---------------+--------+----------+-----------+--------
+   10,000.00 |             — |      — |        — |  9,000.00 |    0.00
 
 Commitment periods: 0
 
@@ -30,14 +29,14 @@ FORECAST
 Balance snapshot UTC: 2026-10-23 00:00:00
 Latest reported completed usage day (UTC): 2026-10-22
 Forecast horizon: Service contract end | 2026-11-02 (UTC)
-Amounts: USD | 1 month = 30 complete UTC days.
+Amounts: TRY | 1 month = 30 complete UTC days.
 Windows start (UTC): 30 days = 2026-09-23 | 7 days = 2026-10-16
 
-Baseline     | Avg/day | Unused at end | Overage | Days  | Result
--------------+---------+---------------+---------+-------+---------
-Last 30 days |   10.00 |      8,650.00 |    0.00 | 30/30 | Estimate
-Last 7 days  |   10.00 |      8,650.00 |    0.00 | 7/7   | Estimate
-Previous day |   10.00 |      8,650.00 |    0.00 | 1/1   | Estimate
+Baseline     | Avg/day | Unused at end | Overage at end | Coverage | Contract days left | Result
+-------------+---------+---------------+----------------+----------+--------------------+---------
+Last 30 days |   10.00 |      8,900.00 |           0.00 | 30/30    | 10                 | Estimate
+Last 7 days  |   10.00 |      8,900.00 |           0.00 | 7/7      | 10                 | Estimate
+Previous day |   10.00 |      8,900.00 |           0.00 | 1/1      | 10                 | Estimate
 
 Estimate = remaining credit - future consumption, minimum zero.
 Missing days are not treated as zero.
