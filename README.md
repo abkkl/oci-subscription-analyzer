@@ -25,7 +25,7 @@ No password, API key setup, Python packages, or `config.ini` file is required in
 ## What the report includes
 
 - Every subscription returned for the current tenancy, with all API pages fetched.
-- Every subscribed service, without hard-coded subscription IDs, SKU filters, or status filters.
+- All returned subscribed services are inspected without hard-coded IDs or SKUs. Empty zero-credit companion lines are summarized in a note rather than a separate section.
 - Subscription status and currency; service name, SKU, program, pricing model, and dates.
 - Promotional credit, service total value, funded allocation, consumption, and available balance as separate fields.
 - Every returned commitment period, including its quantity, net amount, funded allocation, consumption, and available balance.
@@ -33,45 +33,59 @@ No password, API key setup, Python packages, or `config.ini` file is required in
 - Three unused-credit forecasts based on the last 30 complete days, last 7 complete days, and the previous complete day's consumption.
 - The last completed UTC calendar date and the latest completed usage date actually returned by OCI, shown separately.
 
-The same report handles PoC and production records. The fields populated by OCI depend on the subscription and service type; successful execution does not imply that every billing field will be populated. Forecasts are printed as three separate compact blocks with a blank line after the `FORECAST` heading to avoid a very wide table wrapping in Cloud Shell.
+The same report handles PoC and production records. The fields populated by OCI depend on the subscription and service type; successful execution does not imply that every billing field will be populated. The three scenarios are combined in one compact forecast table, with a blank line after the `FORECAST` heading. Numeric amounts are right-aligned. Service names have distinct section headings. Terminal headings use subtle color when stdout is a terminal; set `NO_COLOR=1` to disable color.
 
 ## Example output
 
-The following balance excerpt uses fictional data:
+The following output uses fictional data:
 
 ```text
-OCI SUBSCRIPTION AND BALANCE REPORT
-— = No value returned by the API. Service and commitment amounts are not added together.
-
 ==============================================================================
 SUBSCRIPTION example-subscription | ACTIVE | USD
 ==============================================================================
+Contract end (UTC): 2026-11-02 | 0 months 10 days remaining (10 days total)
+End date based on reported service contract dates.
 
-1. Oracle Cloud Program - Universal Credits
-SKU: B89010 | Status: ACTIVE
+Note: B88206 — Oracle PaaS and IaaS Universal Credits omitted: zero reported
+credit and consumption (including commitment amounts).
+
+──────────────────────────────────────────────────────────────────────────────
+SERVICE 1 | B89010
+Oracle Cloud Program - Universal Credits
+──────────────────────────────────────────────────────────────────────────────
+Status: ACTIVE
 Program: BYINVITE-POC-STD | Model: Pay As You Go
-Period (UTC): 2026-01-01 → 2026-12-31
+Period (UTC): 2026-08-01 → 2026-11-02
 
-Amount              | USD
---------------------+----------
-Promotional credit  | 10,000.00
-Service total value | 0.00
-Funded allocation   | —
-Consumed            | 1,250.00
-REMAINING BALANCE   | 8,750.00
+BALANCES (USD)
+Promo credit | Service total | Funded | Consumed | Remaining
+-------------+---------------+--------+----------+----------
+   10,000.00 |          0.00 |      — | 1,250.00 |  8,750.00
 
 Commitment periods: 0
 
-Subscriptions: 1 | Successful: 1 | Failed: 0
+FORECAST
+
+Balance snapshot UTC: 2026-10-23 00:00:00
+Last completed calendar day (UTC): 2026-10-22
+Latest reported completed usage day (UTC): 2026-10-22
+Forecast horizon: Service contract end
+Horizon end (UTC): 2026-11-02
+Amounts: USD | 1 month = 30 complete UTC days.
+Windows start (UTC): 30 days = 2026-09-23 | 7 days = 2026-10-16
+
+Baseline     | Avg/day | Unused at end | Beyond credit | Days  | Result
+-------------+---------+---------------+---------------+-------+---------
+Last 30 days |   10.00 |      8,650.00 |          0.00 | 30/30 | Estimate
+Last 7 days  |   10.00 |      8,650.00 |          0.00 | 7/7   | Estimate
+Previous day |   10.00 |      8,650.00 |          0.00 | 1/1   | Estimate
+
+Estimate = remaining credit - future consumption, minimum zero.
+Missing days are not treated as zero.
+Reported usage may still be delayed or revised.
 ```
 
-When commitment records are returned, each service also includes a table:
-
-```text
-Start UTC  | End UTC    | Quantity  | Net amount | Funded | Consumed | Remaining
------------+------------+-----------+------------+--------+----------+----------
-2026-01-01 | 2026-12-31 | 10,000.00 | 10,000.00  | —      | 1,250.00 | 8,750.00
-```
+Nonzero services appear under distinct `SERVICE` headings, including the full service name. Each service has one consolidated balances table, one commitment table if periods exist, and one three-row forecast table. Empty companion services are represented only by an omission note.
 
 ## How to read the amounts
 
@@ -96,7 +110,7 @@ The report requests the previous 30 complete UTC days from two sources, explicit
 
 When exactly one service in a currency is identified as a credit pool (reported promotional, funded, service-total, consumed, available, or commitment-available amount is positive), the report can use matching Cost Analysis daily costs. This is explicitly labelled a **subscription-level estimate**, with the assumption that all reported subscription costs consume that pool. One positive pool is not proof of billing allocation. Differences between subscription costs and credit-eligible consumption can affect the estimate.
 
-Zero-valued companion service rows do not prevent that scenario. This handles PoC records whose credit balance and computed usage appear on different service lines. No SKU or subscription ID is hard-coded.
+Zero-valued companion service rows do not prevent that scenario. This handles PoC records whose credit balance and computed usage appear on different service lines. No SKU or subscription ID is hard-coded. A service is omitted only when its reported available and consumed amounts are explicitly zero and no nonzero credit or commitment amounts are present. Previously funded but exhausted services and services with unknown amounts remain visible.
 
 When multiple credit pools exist, the script does not assign the entire subscription's cost to each pool. It falls back to exact service-level computed usage. Missing service-level data leaves the forecast unavailable. A tenancy-wide total is never assigned to a subscription or service, and currencies are never mixed.
 
@@ -143,7 +157,7 @@ If the service has not existed for the full window, or net consumption is negati
 
 ### Confirm which version is running
 
-This revision prints `Report version: 1.1` near the top. If you see the old wide forecast table, you are running an earlier version. Until you publish your updated files to GitHub, downloading from the repository's `main` URL will continue to fetch the previously published version. Upload the revised `oci_balance.py` to Cloud Shell and run `python3 ~/oci_balance.py` to test it first.
+This revision prints `Report version: 1.2` near the top. If you see three separate forecast tables or a separate empty zero-credit service section, you are running an earlier version. Until you publish your updated files to GitHub, downloading from the repository's `main` URL will continue to fetch the previously published version. Upload the revised `oci_balance.py` to Cloud Shell and run `python3 ~/oci_balance.py` to test it first.
 
 For a reproducible reference date:
 
@@ -197,3 +211,5 @@ Home region discovery uses [List region subscriptions](https://docs.oracle.com/e
 2. [List subscription details](https://docs.oracle.com/en-us/iaas/tools/oci-cli/latest/oci_cli_docs/cmdref/onesubscription/subscription/subscription/list.html) with `--is-commit-info-required true` to retrieve service and commitment data.
 3. [List aggregated computed usage](https://docs.oracle.com/en-us/iaas/tools/oci-cli/latest/oci_cli_docs/cmdref/onesubscription/computed-usage/aggregated-computed-usage-summary/list-aggregated-computed-usages.html) with `--grouping DAILY` to calculate the three recent-consumption scenarios.
 4. [Request summarized usage](https://docs.oracle.com/en-us/iaas/tools/oci-cli/latest/oci_cli_docs/cmdref/usage-api/usage-summary/request-summarized-usages.html) with `--query-type COST`, `--granularity DAILY`, and subscription ID grouping/filtering for the subscription-level forecast scenario.
+
+Contract countdowns use UTC calendar dates: whole calendar months plus remaining days, with the total day count also shown. Today is excluded from the total. When the subscription API does not return an end date, a common service contract end date is used; differing service end dates are shown separately. Expired contracts and contracts ending today are labeled explicitly. This countdown does not change the forecast horizon or its fractional-day calculation.

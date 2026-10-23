@@ -15,6 +15,16 @@ def service(sku, **values):
 
 
 class ReportTests(unittest.TestCase):
+    def test_contract_countdown_uses_calendar_months_and_total_utc_days(self):
+        now = datetime(2026, 10, 23, 10, tzinfo=timezone.utc)
+        self.assertEqual(report.contract_countdown("2027-01-15T23:59:59Z", now),
+                         "2027-01-15 | 2 months 23 days remaining (84 days total)")
+        self.assertIn("Ends today", report.contract_countdown("2026-10-23T23:59:59Z", now))
+        self.assertIn("Expired", report.contract_countdown("2026-10-22T23:59:59Z", now))
+        self.assertEqual(report.contract_countdown(None, now), "Unavailable")
+        self.assertIn("1 months 0 days", report.contract_countdown(
+            "2027-02-28T23:59:59Z", datetime(2027, 1, 31, tzinfo=timezone.utc)))
+
     def setUp(self):
         patcher = patch.object(report, "fetch_cost_usage", return_value=[])
         patcher.start()
@@ -173,7 +183,8 @@ class ForecastTests(unittest.TestCase):
         self.assertIn("2026-10-23T00:00:00+00:00", usage_call)
         self.assertEqual(code, 1)
         self.assertIn("10,000.00", output.getvalue())
-        self.assertIn("REMAINING BALANCE", output.getvalue())
+        self.assertIn("BALANCES (TRY)", output.getvalue())
+        self.assertIn("Remaining", output.getvalue())
         self.assertIn("Usage request failed", output.getvalue())
         self.assertIn("usage request failed", errors.getvalue())
 
@@ -211,10 +222,24 @@ class CostAnalysisTests(unittest.TestCase):
             report.render("example", self.summaries(), self.now, cost_usage=self.costs())
         text = out.getvalue()
         self.assertIn("8,900.00", text)
-        self.assertIn("Daily records: 30/30", text)
+        self.assertIn("30/30", text)
         self.assertIn("Latest reported completed usage day (UTC): 2026-10-22", text)
-        self.assertEqual(text.count("Scope: Subscription-level estimate"), 1)
+        self.assertNotIn("Source:", text)
+        self.assertNotIn("Scope:", text)
+        self.assertNotIn("Assumption:", text)
         self.assertIn("FORECAST\n\nBalance snapshot", text)
+        self.assertEqual(text.count("FORECAST\n"), 1)
+        self.assertEqual(text.count("Baseline     |"), 1)
+        self.assertNotIn("SERVICE 2", text)
+        self.assertIn("STANDARD — Example credits omitted", text)
+
+    def test_exhausted_credit_is_retained_but_empty_companion_line_is_omitted(self):
+        self.assertFalse(report.is_zero_credit_service({
+            "original-promo-amount": "1000", "used-amount": "1000", "available-amount": "0"}))
+        self.assertTrue(report.is_zero_credit_service({
+            "total-value": "0", "used-amount": "0.0", "available-amount": "0.0",
+            "commitment-services": [{"quantity": "0", "available-amount": "0"}]}))
+        self.assertFalse(report.is_zero_credit_service({"available-amount": "0"}))
 
     def test_multiple_pools_are_not_assigned_whole_subscription_cost(self):
         summaries = self.summaries()

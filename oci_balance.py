@@ -5,6 +5,9 @@ import argparse
 import os
 import subprocess
 import sys
+import re
+import textwrap
+import calendar
 from decimal import Decimal, InvalidOperation
 from datetime import datetime, timedelta, timezone
 
@@ -79,6 +82,28 @@ def timestamp(value):
         return result.astimezone(timezone.utc)
     except (ValueError, TypeError):
         return None
+
+
+def contract_countdown(value, as_of):
+    end = timestamp(value)
+    if end is None:
+        return "Unavailable"
+    today, last = as_of.astimezone(timezone.utc).date(), end.date()
+    days = (last - today).days
+    if end <= as_of:
+        return f"{last} | Expired"
+    if days == 0:
+        return f"{last} | Ends today (0 days remaining)"
+    months = (last.year - today.year) * 12 + last.month - today.month
+    def anniversary(count):
+        year, month = divmod(today.year * 12 + today.month - 1 + count, 12)
+        month += 1
+        return today.replace(year=year, month=month,
+                             day=min(today.day, calendar.monthrange(year, month)[1]))
+    if anniversary(months) > last:
+        months -= 1
+    remainder = (last - anniversary(months)).days
+    return f"{last} | {months} months {remainder} days remaining ({days} days total)"
 
 
 def daily_usage(groups, service_id, currency, cutoff):
@@ -167,6 +192,23 @@ def credit_pool_ids(summaries, currency):
     return ids
 
 
+def is_zero_credit_service(service):
+    """Hide empty companion lines, retaining exhausted or unknown credit pools."""
+    keys = ("original-promo-amount", "total-value", "funded-allocation-value", "used-amount", "available-amount")
+    amounts = [decimal_value(service.get(key)) for key in keys]
+    for commitment in service.get("commitment-services") or []:
+        amounts += [decimal_value(commitment.get(key)) for key in (
+            "quantity", "line-net-amount", "funded-allocation-value", "used-amount", "available-amount")]
+    if any(value is not None and value != 0 for value in amounts):
+        return False
+    return decimal_value(service.get("available-amount")) == 0 and decimal_value(service.get("used-amount")) == 0
+
+
+def heading(title):
+    use_color = sys.stdout.isatty() and "NO_COLOR" not in os.environ and os.environ.get("TERM") != "dumb"
+    print(f"\033[1;36m{title}\033[0m" if use_color else title)
+
+
 def forecast_rows(record, daily, as_of, history_start=None):
     """Use fixed 30/7/1-day windows, excluding the current incomplete UTC day."""
     start = timestamp(record.get("time-start"))
@@ -207,19 +249,17 @@ def forecast_rows(record, daily, as_of, history_start=None):
 
 def render_recent_forecast(service, currency, as_of, groups, usage_error=None, daily_override=None):
     cutoff = as_of.replace(hour=0, minute=0, second=0, microsecond=0)
-    print("\nFORECAST\n")
+    print()
+    heading("FORECAST")
+    print()
     print(f"Balance snapshot UTC: {as_of.strftime('%Y-%m-%d %H:%M:%S')}")
     print(f"Last completed calendar day (UTC): {(cutoff - timedelta(days=1)).date()}")
     try:
         if daily_override is not None:
             daily = daily_override
             usage_error = None
-            print("Source: Cost Analysis daily costs, matched by subscription and currency.")
-            print("Scope: Subscription-level estimate for the only identified credit pool.")
-            print("Assumption: all reported subscription costs consume this credit pool.")
         else:
             daily = daily_usage(groups or [], service.get("id"), currency, cutoff) if service.get("id") else {}
-            print("Source: OneSubscription computed usage, matched by service and currency.")
     except ValueError as exc:
         daily, usage_error = {}, str(exc)
     latest = max(daily).isoformat() if daily else "No matching usage returned"
@@ -250,17 +290,20 @@ def render_recent_forecast(service, currency, as_of, groups, usage_error=None, d
         print(f"Usage unavailable: {usage_error}")
         for row in rows:
             row.update(rate=None, unused=None, beyond=None, reason="Usage request failed")
+    print(f"Windows start (UTC): 30 days = {rows[0]['first']} | 7 days = {rows[1]['first']}")
+    print()
+    table(
+        ["Baseline", "Avg/day", "Unused at end", "Beyond credit", "Days", "Result"],
+        [[row["label"], number(row["rate"]), number(row["unused"]),
+          number(row["beyond"]), row["coverage"], "N/A" if row["reason"] else "Estimate"]
+         for row in rows],
+    )
+    reasons = {}
     for row in rows:
-        print(f"\n  {row['label']}")
-        print(f"  Window (UTC): {row['first']} → {row['last']}")
-        print(f"  Daily records: {row['coverage']}")
-        table(
-            ["  Estimate", shown(currency)],
-            [["  Average / day", number(row["rate"])],
-             ["  UNUSED CREDIT AT END", number(row["unused"])],
-             ["  Consumption beyond credit", number(row["beyond"])]],
-        )
-        print(f"  Status: {row['reason'] or 'Estimate'}")
+        if row["reason"]:
+            reasons.setdefault(row["reason"], []).append(row["label"])
+    for reason, labels in reasons.items():
+        print(textwrap.fill(f"N/A ({', '.join(labels)}): {reason}", width=78))
     print()
     print("Estimate = remaining credit - future consumption, minimum zero.")
     print("Missing days are not treated as zero.")
@@ -269,9 +312,12 @@ def render_recent_forecast(service, currency, as_of, groups, usage_error=None, d
 
 def table(headers, rows):
     widths = [max(len(str(row[i])) for row in [headers, *rows]) for i in range(len(headers))]
-    def line(row):
-        return " | ".join(str(cell).ljust(widths[i]) for i, cell in enumerate(row))
-    print(line(headers))
+    numeric_columns = [all(str(row[i]) == "—" or re.fullmatch(r"-?[\d,]+\.\d{2}", str(row[i])) for row in rows)
+                       for i in range(len(headers))]
+    def line(row, is_header=False):
+        return " | ".join(str(cell).rjust(widths[i]) if numeric_columns[i] and not is_header
+                          else str(cell).ljust(widths[i]) for i, cell in enumerate(row)).rstrip()
+    print(line(headers, True))
     print("-+-".join("-" * width for width in widths))
     for row in rows:
         print(line(row))
@@ -285,23 +331,45 @@ def render(subscription_id, summaries, as_of=None, usage=None, usage_error=None,
         print(f"SUBSCRIPTION {subscription_id} | {shown(summary.get('status'))} | {shown(currency)}")
         print("=" * 78)
         services = summary.get("subscribed-services") or []
+        if timestamp(summary.get("time-end")) is not None:
+            print(f"Contract end (UTC): {contract_countdown(summary['time-end'], as_of)}")
+        else:
+            ends = sorted({timestamp(s.get("time-end")) for s in services
+                           if timestamp(s.get("time-end")) is not None})
+            if len(ends) == 1:
+                print(f"Contract end (UTC): {contract_countdown(ends[0].isoformat(), as_of)}")
+                print("End date based on reported service contract dates.")
+            elif ends:
+                print("Contract end (UTC): Multiple service end dates; see each service below.")
+            else:
+                print("Contract end (UTC): Unavailable")
         if not services:
             print("No service records returned.")
+        omitted = [service for service in services if is_zero_credit_service(service)]
+        if omitted:
+            print()
+            for service in omitted:
+                product = service.get("product") or {}
+                print(textwrap.fill(
+                    f"Note: {shown(product.get('part-number'))} — {shown(product.get('name'))} omitted: "
+                    "zero reported credit and consumption (including commitment amounts).", width=78))
         for index, service in enumerate(services, 1):
+            if is_zero_credit_service(service):
+                continue
             product = service.get("product") or {}
-            print(f"\n{index}. {shown(product.get('name'))}")
-            print(f"SKU: {shown(product.get('part-number'))} | Status: {shown(service.get('status'))}")
+            print("\n" + "─" * 78)
+            heading(f"SERVICE {index} | {shown(product.get('part-number'))}")
+            heading(shown(product.get("name")))
+            print("─" * 78)
+            print(f"Status: {shown(service.get('status'))}")
             print(f"Program: {shown(service.get('program-type'))} | Model: {shown(service.get('pricing-model'))}")
             print(f"Period (UTC): {date(service.get('time-start'))} → {date(service.get('time-end'))}")
+            print(f"Contract end (UTC): {contract_countdown(service.get('time-end'), as_of)}")
             print()
-            fields = [
-                ("Promotional credit", "original-promo-amount"),
-                ("Service total value", "total-value"),
-                ("Funded allocation", "funded-allocation-value"),
-                ("Consumed", "used-amount"),
-                ("REMAINING BALANCE", "available-amount"),
-            ]
-            table(["Amount", shown(currency)], [[label, number(service.get(key))] for label, key in fields])
+            heading(f"BALANCES ({shown(currency)})")
+            table(["Promo credit", "Service total", "Funded", "Consumed", "Remaining"],
+                  [[number(service.get(key)) for key in (
+                      "original-promo-amount", "total-value", "funded-allocation-value", "used-amount", "available-amount")]])
             commitments = service.get("commitment-services") or []
             print(f"\nCommitment periods: {len(commitments)}")
             if commitments:
@@ -345,7 +413,7 @@ def main(argv=None):
         print("ERROR: OCI_TENANCY is missing. Run this script in OCI Cloud Shell.", file=sys.stderr)
         return 1
     print("OCI SUBSCRIPTION AND BALANCE REPORT")
-    print("Report version: 1.1 | Home-region routing and Cost Analysis forecasts")
+    print("Report version: 1.2 | Consolidated tables and credit forecasts")
     print("Region note: Run Cloud Shell in the tenancy home region.")
     try:
         CLI_REGION = home_region(tenancy)
