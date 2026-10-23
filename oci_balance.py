@@ -301,6 +301,17 @@ def render_recent_forecast(service, currency, as_of, groups, usage_error=None, d
     if service.get("status") not in (None, "ACTIVE"):
         target = {}
         scope = "Unavailable: service is not ACTIVE"
+    rows = forecast_rows(target, daily, as_of, timestamp(service.get("time-start")))
+    if usage_error:
+        for row in rows:
+            row.update(rate=None, unused=None, beyond=None, future=None, reason="Usage request failed")
+    if all(row["reason"] for row in rows):
+        reason = scope[len("Unavailable: "):] if scope.startswith("Unavailable:") else (
+            f"Usage request failed: {usage_error}" if usage_error else
+            "; ".join(dict.fromkeys(row["reason"] for row in rows)))
+        print()
+        print(f"Forecast unavailable ({shown(currency)}): {reason}.")
+        return
     print()
     heading(f"FORECAST ({shown(currency)}) | Horizon: {scope} - {date(target.get('time-end'))}")
     print()
@@ -308,11 +319,6 @@ def render_recent_forecast(service, currency, as_of, groups, usage_error=None, d
     print(f"Latest reported completed usage day (UTC): {latest}")
     if commitments:
         print("Future renewals and credit rollover are not forecast.")
-    rows = forecast_rows(target, daily, as_of, timestamp(service.get("time-start")))
-    if usage_error:
-        print(f"Usage unavailable: {usage_error}")
-        for row in rows:
-            row.update(rate=None, unused=None, beyond=None, future=None, reason="Usage request failed")
     print()
     contract_end = timestamp(service.get("time-end"))
     contract_days = max(0, (contract_end.date() - as_of.date()).days) if contract_end else None

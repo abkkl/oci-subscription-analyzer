@@ -176,7 +176,8 @@ class ForecastTests(unittest.TestCase):
         with contextlib.redirect_stdout(output):
             report.render_recent_forecast(self.record, "TRY", self.now, groups)
         self.assertNotIn("Last completed calendar day", output.getvalue())
-        self.assertIn("Latest reported completed usage day (UTC): 2026-10-21", output.getvalue())
+        self.assertIn("Forecast unavailable (TRY)", output.getvalue())
+        self.assertNotIn("Baseline", output.getvalue())
         self.assertIn("Missing daily usage records", output.getvalue())
 
     def test_commitment_horizon_does_not_use_contract_end(self):
@@ -184,12 +185,29 @@ class ForecastTests(unittest.TestCase):
             {"time-start": "2026-10-01T00:00:00Z", "time-end": "2026-11-01T00:00:00Z", "available-amount": "500"}]})
         output = io.StringIO()
         with contextlib.redirect_stdout(output):
-            report.render_recent_forecast(service_record, "EUR", self.now, [])
+            report.render_recent_forecast(service_record, "EUR", self.now, [], daily_override=self.daily)
         self.assertIn("FORECAST (EUR) | Horizon: Active commitment end - 2026-11-01", output.getvalue())
         self.assertIn("Overage Credit at End", output.getvalue())
         self.assertIn("Contract days left", output.getvalue())
         forecast_lines = [line for line in output.getvalue().splitlines() if line.startswith("Last 30 days")]
         self.assertEqual(forecast_lines[0].split("|")[-3].strip(), "10")
+
+    def test_inactive_service_shows_only_unavailable_note(self):
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            report.render_recent_forecast(dict(self.record, status="EXPIRED"), "AED", self.now, [])
+        self.assertEqual(output.getvalue().strip(), "Forecast unavailable (AED): service is not ACTIVE.")
+
+    def test_partial_forecast_keeps_table(self):
+        output = io.StringIO()
+        yesterday = (self.now - timedelta(days=1)).date()
+        with contextlib.redirect_stdout(output):
+            report.render_recent_forecast(self.record, "EUR", self.now, [],
+                                          daily_override={yesterday: Decimal(10)})
+        self.assertIn("Baseline", output.getvalue())
+        self.assertIn("Previous day", output.getvalue())
+        self.assertIn("Estimate", output.getvalue())
+        self.assertNotIn("Forecast unavailable", output.getvalue())
 
     def test_main_requests_daily_usage_and_keeps_balance_on_usage_failure(self):
         calls = []
