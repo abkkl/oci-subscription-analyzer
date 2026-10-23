@@ -56,29 +56,29 @@ Oracle Cloud Program - Universal Credits
 Status: ACTIVE
 Program: BYINVITE-POC-STD | Model: Pay As You Go
 Period (UTC): 2026-08-01 → 2026-11-02
+Contract end (UTC): 2026-11-02 | 0 months 10 days remaining (10 days total)
 
 BALANCES (USD)
 Promo credit | Service total | Funded | Consumed | Remaining
 -------------+---------------+--------+----------+----------
    10,000.00 |          0.00 |      — | 1,250.00 |  8,750.00
+Actual overage (USD): 0.00
 
 Commitment periods: 0
 
 FORECAST
 
 Balance snapshot UTC: 2026-10-23 00:00:00
-Last completed calendar day (UTC): 2026-10-22
 Latest reported completed usage day (UTC): 2026-10-22
-Forecast horizon: Service contract end
-Horizon end (UTC): 2026-11-02
+Forecast horizon: Service contract end | 2026-11-02 (UTC)
 Amounts: USD | 1 month = 30 complete UTC days.
 Windows start (UTC): 30 days = 2026-09-23 | 7 days = 2026-10-16
 
-Baseline     | Avg/day | Unused at end | Beyond credit | Days  | Result
--------------+---------+---------------+---------------+-------+---------
-Last 30 days |   10.00 |      8,650.00 |          0.00 | 30/30 | Estimate
-Last 7 days  |   10.00 |      8,650.00 |          0.00 | 7/7   | Estimate
-Previous day |   10.00 |      8,650.00 |          0.00 | 1/1   | Estimate
+Baseline     | Avg/day | Unused at end | Overage | Days  | Result
+-------------+---------+---------------+---------+-------+---------
+Last 30 days |   10.00 |      8,650.00 |    0.00 | 30/30 | Estimate
+Last 7 days  |   10.00 |      8,650.00 |    0.00 | 7/7   | Estimate
+Previous day |   10.00 |      8,650.00 |    0.00 | 1/1   | Estimate
 
 Estimate = remaining credit - future consumption, minimum zero.
 Missing days are not treated as zero.
@@ -129,10 +129,10 @@ Each scenario projects:
 ```text
 Additional consumption = daily rate × fractional days until the forecast horizon
 Unused credit at end   = max(0, current reported remaining balance − additional consumption)
-Beyond credit          = max(0, additional consumption − current reported remaining balance)
+Overage          = max(0, additional consumption − current reported remaining balance)
 ```
 
-`Beyond credit` is an estimate of consumption exceeding the credit, not a prediction of an invoice or confirmation that the account can continue running after credits are exhausted. The model assumes a constant daily rate, with no new credits or changes to pricing, workload, allocation, or expiry terms. Forecasts are estimates and are printed separately from reported balances.
+`Overage` is an estimate of consumption exceeding the credit, not a prediction of an invoice or confirmation that the account can continue running after credits are exhausted. The model assumes a constant daily rate, with no new credits or changes to pricing, workload, allocation, or expiry terms. Forecasts are estimates and are printed separately from reported balances.
 
 ### Forecast horizon
 
@@ -145,11 +145,10 @@ The output labels the horizon explicitly; a commitment-period forecast must not 
 ### Complete calendar day versus available billing data
 
 ```text
-Last completed calendar day (UTC): 2026-10-22
 Latest reported completed usage day (UTC): 2026-10-21
 ```
 
-These dates can differ because billing data may arrive later. The latest reported date is for the matching service and currency within the requested 30-day range. The report does not silently replace yesterday with an older day.
+The latest reported date can precede the previous complete UTC day because billing data may arrive later. The latest reported date is for the matching service and currency within the requested 30-day range. The report does not silently replace yesterday with an older day.
 
 Each scenario includes a `Days` coverage column, such as `7/7`. If a daily record is missing, the window's forecast is unavailable instead of assuming zero spend. An explicit zero-cost record is valid. This conservative rule means a genuinely idle day with no record is also unavailable. Even `7/7` proves only that each date has a record, not that OCI has finished processing every charge; values may be revised later.
 
@@ -157,7 +156,7 @@ If the service has not existed for the full window, or net consumption is negati
 
 ### Confirm which version is running
 
-This revision prints `Report version: 1.2` near the top. If you see three separate forecast tables or a separate empty zero-credit service section, you are running an earlier version. Until you publish your updated files to GitHub, downloading from the repository's `main` URL will continue to fetch the previously published version. Upload the revised `oci_balance.py` to Cloud Shell and run `python3 ~/oci_balance.py` to test it first.
+This revision prints `Report version: 1.3` near the top. If you see three separate forecast tables or a separate empty zero-credit service section, you are running an earlier version. Until you publish your updated files to GitHub, downloading from the repository's `main` URL will continue to fetch the previously published version. Upload the revised `oci_balance.py` to Cloud Shell and run `python3 ~/oci_balance.py` to test it first.
 
 For a reproducible reference date:
 
@@ -213,3 +212,9 @@ Home region discovery uses [List region subscriptions](https://docs.oracle.com/e
 4. [Request summarized usage](https://docs.oracle.com/en-us/iaas/tools/oci-cli/latest/oci_cli_docs/cmdref/usage-api/usage-summary/request-summarized-usages.html) with `--query-type COST`, `--granularity DAILY`, and subscription ID grouping/filtering for the subscription-level forecast scenario.
 
 Contract countdowns use UTC calendar dates: whole calendar months plus remaining days, with the total day count also shown. Today is excluded from the total. When the subscription API does not return an end date, a common service contract end date is used; differing service end dates are shown separately. Expired contracts and contracts ending today are labeled explicitly. This countdown does not change the forecast horizon or its fractional-day calculation.
+
+### Actual overage
+
+Below each balances table, `Actual overage` sums only explicit `OVERAGE` usage records for that service and currency, requested from the service contract start through the report snapshot. Other usage types (including PAY_AS_YOU_GO) are not classified as overage. Signed adjustments are retained. This is the net overage in records returned by OCI, not a certified invoice total; API retention, delayed records, or revisions can affect it. Missing or untyped matching records show `—`, not zero. The forecast `Overage` column estimates additional future consumption beyond the remaining credit; it does not add already reported actual overage. Long contracts can take longer to retrieve because all usage pages are requested.
+
+The usage type and amount fields are documented in [Oracle ComputedUsageAggregation](https://docs.oracle.com/en-us/iaas/tools/python/latest/api/osub_usage/models/oci.osub_usage.models.ComputedUsageAggregation.html).

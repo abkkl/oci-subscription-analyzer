@@ -15,6 +15,34 @@ def service(sku, **values):
 
 
 class ReportTests(unittest.TestCase):
+    def test_actual_overage_uses_only_explicit_matching_records(self):
+        now = datetime(2026, 10, 23, tzinfo=timezone.utc)
+        record = {"id": "svc", "time-start": "2026-08-01T00:00:00Z"}
+        def group(sid, currency, rows):
+            return {"parent-subscribed-service-id": sid, "currency-code": currency,
+                    "aggregated-computed-usages": rows}
+        def row(kind, amount, day="2026-08-02T00:00:00Z"):
+            return {"type": kind, "cost-unrounded": amount, "time-metered-on": day}
+        groups = [group("svc", "TRY", [row("OVERAGE", "25.50"), row("OVERAGE", "-2"),
+                      row("USAGE", "900"), row("OVERAGE", "700", "2026-10-24T00:00:00Z")]),
+                  group("other", "TRY", [row("OVERAGE", "400")]),
+                  group("svc", "EUR", [row("OVERAGE", "600")])]
+        self.assertEqual(report.actual_overage(record, "TRY", groups, now), Decimal("23.50"))
+        self.assertIsNone(report.actual_overage(record, "TRY", [], now))
+        self.assertEqual(report.actual_overage(record, "TRY", [group("svc", "TRY", [row("USAGE", "10")])], now), 0)
+        self.assertIsNone(report.actual_overage(record, "TRY", [group("svc", "TRY", [row(None, "10")])], now))
+
+    def test_subscription_header_and_contract_countdown_are_colored_on_terminal(self):
+        output = io.StringIO()
+        with patch.object(output, "isatty", return_value=True), \
+                patch.dict(os.environ, {"TERM": "xterm"}), \
+                contextlib.redirect_stdout(output):
+            with patch.dict(os.environ):
+                os.environ.pop("NO_COLOR", None)
+                report.render("example", [{"time-end": "2027-01-15T23:59:59Z"}])
+        self.assertIn("\033[1;36mSUBSCRIPTION example", output.getvalue())
+        self.assertIn("\033[1;36mContract end", output.getvalue())
+
     def test_contract_countdown_uses_calendar_months_and_total_utc_days(self):
         now = datetime(2026, 10, 23, 10, tzinfo=timezone.utc)
         self.assertEqual(report.contract_countdown("2027-01-15T23:59:59Z", now),
@@ -147,7 +175,7 @@ class ForecastTests(unittest.TestCase):
         output = io.StringIO()
         with contextlib.redirect_stdout(output):
             report.render_recent_forecast(self.record, "TRY", self.now, groups)
-        self.assertIn("Last completed calendar day (UTC): 2026-10-22", output.getvalue())
+        self.assertNotIn("Last completed calendar day", output.getvalue())
         self.assertIn("Latest reported completed usage day (UTC): 2026-10-21", output.getvalue())
         self.assertIn("Missing daily usage records", output.getvalue())
 
@@ -157,8 +185,7 @@ class ForecastTests(unittest.TestCase):
         output = io.StringIO()
         with contextlib.redirect_stdout(output):
             report.render_recent_forecast(service_record, "EUR", self.now, [])
-        self.assertIn("Forecast horizon: Active commitment end", output.getvalue())
-        self.assertIn("Horizon end (UTC): 2026-11-01", output.getvalue())
+        self.assertIn("Forecast horizon: Active commitment end | 2026-11-01 (UTC)", output.getvalue())
 
     def test_main_requests_daily_usage_and_keeps_balance_on_usage_failure(self):
         calls = []
@@ -179,7 +206,7 @@ class ForecastTests(unittest.TestCase):
             code = report.main(["--as-of", "2026-10-23"])
         usage_call = next(c for c in calls if "list-aggregated-computed-usages" in c)
         self.assertIn("DAILY", usage_call)
-        self.assertIn("2026-09-23T00:00:00+00:00", usage_call)
+        self.assertIn("2026-09-01T00:00:00+00:00", usage_call)
         self.assertIn("2026-10-23T00:00:00+00:00", usage_call)
         self.assertEqual(code, 1)
         self.assertIn("10,000.00", output.getvalue())
