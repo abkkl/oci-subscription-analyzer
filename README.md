@@ -35,15 +35,17 @@ python3 oci_balance.py --region eu-frankfurt-1 --include-history --as-of 2026-10
 
 Set `NO_COLOR=1` to disable color. Loading animation appears only in interactive terminals.
 
+The tenant name is read from IAM; if permission is unavailable, the header says `Tenant name unavailable`. The colored end marker includes completion date/time in UTC.
+
 The download command uses the version published on GitHub. To run a locally supplied update, upload it to Cloud Shell and run `python3 ~/oci_balance.py`.
 
 ## Report contents
 
-- Separate subscription/service sections, currencies and contract countdowns.
-- Balances, reported overage and commitment periods.
+- Colored tenant/subscription/service headings and contract countdowns in years, months and days.
+- Balances, reported overage and commitment periods with active/past/future status and remaining days.
 - Three forecast scenarios: last 30 complete UTC days, last 7 days and previous day.
 - Consumption trend: 7-day versus 30-day average.
-- Summarized history and omission notes for empty zero-credit services.
+- Summarized history and omission notes for empty zero-credit services. When history exists, one reminder to use `--include-history` appears just before the final subscription counts.
 
 Amounts use one decimal place; calculations retain full precision. `—` means unavailable, not zero. Service and commitment balances are not added together; currencies are never combined.
 
@@ -70,6 +72,8 @@ Cost Analysis supplies subscription-level daily costs only when a single active 
 
 Missing days are not zero. Incomplete windows, inactive services or invalid horizons make forecasts unavailable. If all scenarios are unavailable, a short note replaces the table. Estimates assume steady consumption and no new credits, renewals or rollover; they are not invoice predictions. Usage can be delayed or revised.
 
+Commitment `Remaining days`: past = 0; active = UTC end date minus today; future = the full period duration, rounded up to whole days (normally 365 for an annual period, 366 in a leap year). Invalid dates show `—`.
+
 ## Consumption and overage notes
 
 **Commitment Consumed:** use API `used-amount` when available. For eligible active periods, `net amount − remaining` is shown with `*` as a balance-based estimate that may include adjustments. Future/expired periods are not inferred; zero after expiry does not prove consumption.
@@ -79,6 +83,34 @@ Missing days are not zero. Incomplete windows, inactive services or invalid hori
 ## Examples and troubleshooting
 
 Fictional examples: [default report](sample-output.txt) · [expanded history](sample-output-history.txt).
+
+Report excerpt (fictional data; full output linked above):
+
+```text
+OCI SUBSCRIPTION AND BALANCE REPORT (Example Tenant)
+
+Report version: 1.8 | ahmet.bakkal@oracle.com
+...
+Contract end (UTC): 2027-11-03 | 1 years 0 months 11 days remaining (376 days total)
+
+Commitment periods: 3
+Status | Start UTC  | End UTC    | Remaining days
+-------+------------+------------+---------------
+past   | 2024-11-04 | 2025-11-03 |              0
+active | 2025-11-04 | 2026-11-03 |             11
+future | 2026-11-04 | 2027-11-03 |            365
+
+FORECAST (TRY) | Horizon: Active commitment end - 2026-11-03
+...
+Comment: Consumption trend: 7-day average 1,028.6 TRY/day vs 30-day average 470.0 TRY/day -> 118.8% higher; 2.2x the 30-day average.
+
+...
+History found. Run with --include-history to view details.
+Subscriptions: 2 | Successful: 2 | Failed: 0
+
+*END OF THE REPORT* (2026-10-23 12:00:05 UTC)
+```
+
 
 | Issue | Check |
 | --- | --- |
@@ -98,4 +130,4 @@ python3 -m unittest discover -v
 
 Tests use fictional data and do not call OCI.
 
-Version **1.7** · ahmet.bakkal@oracle.com
+Version **1.8** · ahmet.bakkal@oracle.com

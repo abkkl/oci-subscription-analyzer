@@ -14,6 +14,58 @@ def service(sku, **values):
     return dict({"product": {"name": "Example credits", "part-number": sku}}, **values)
 
 
+class LayoutAndMetadataTests(unittest.TestCase):
+    def test_tenant_name_is_read_and_metadata_failure_does_not_stop_report(self):
+        with patch.object(report, "cli_payload", return_value={"data": {"name": "Example Tenant"}}) as api:
+            self.assertEqual(report.tenancy_name("ocid-example", "eu-frankfurt-1"), "Example Tenant")
+        self.assertEqual(api.call_args[0], ("iam", "tenancy", "get", "--tenancy-id", "ocid-example", "--region", "eu-frankfurt-1"))
+        with patch.object(report, "cli_payload", side_effect=RuntimeError("denied")):
+            self.assertEqual(report.tenancy_name("ocid-example"), "Tenant name unavailable")
+
+    def test_commitment_status_and_days_cover_past_active_and_future(self):
+        now = datetime(2026, 10, 23, 12, tzinfo=timezone.utc)
+        def period(start, end):
+            return {"time-start": start, "time-end": end}
+        self.assertEqual(report.commitment_state(period("2025-11-04T00:00:00Z", "2026-11-03T23:59:59Z"), now), ("active", 11))
+        self.assertEqual(report.commitment_state(period("2024-11-04T00:00:00Z", "2025-11-03T23:59:59Z"), now), ("past", 0))
+        self.assertEqual(report.commitment_state(period("2026-11-04T00:00:00Z", "2027-11-03T23:59:59Z"), now), ("future", 365))
+        self.assertEqual(report.commitment_state(period("2028-01-01T00:00:00Z", "2028-12-31T23:59:59Z"), now), ("future", 366))
+        self.assertEqual(report.commitment_state(period("2026-11-01T00:00:00Z", "2026-11-30T23:59:59Z"), now), ("future", 30))
+        self.assertEqual(report.commitment_state({}, now), ("—", "—"))
+
+    def test_contract_countdown_shows_years_months_days(self):
+        now = datetime(2026, 10, 23, tzinfo=timezone.utc)
+        self.assertEqual(report.contract_countdown("2028-11-03T23:59:59Z", now),
+                         "2028-11-03 | 2 years 0 months 11 days remaining (742 days total)")
+
+    def test_trend_comment_is_one_line_in_requested_format(self):
+        # Raw API rates round to 24.1 and 19.7 with a 22.2% increase.
+        comment = report.consumption_trend([{"rate": Decimal("19.72")}, {"rate": Decimal("24.10")}], "EUR")
+        self.assertEqual(comment, "Comment: Consumption trend: 7-day average 24.1 EUR/day vs 30-day average 19.7 EUR/day -> 22.2% higher; 1.2x the 30-day average.")
+
+    def test_report_audit_and_comment_spacing_and_separator_width(self):
+        now = datetime(2026, 10, 23, tzinfo=timezone.utc)
+        fixture = CostAnalysisTests()
+        fixture.now = now
+        summary = fixture.summaries()
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            report.render("example", summary, now, cost_usage=fixture.costs())
+        text = output.getvalue()
+        self.assertIn("\n" + "=" * 156 + "\nSUBSCRIPTION", text)
+        self.assertRegex(text, r"\n\nOverage audit \(UTC\):[^\n]+\n\nCommitment periods")
+        self.assertRegex(text, r"Comment: Consumption trend:[^\n]+\n\nEstimate =")
+
+    def test_colored_footer_has_completion_timestamp_and_blank_line(self):
+        output = io.StringIO()
+        with patch.object(output, "isatty", return_value=True), patch.dict(os.environ, {"TERM": "xterm"}), \
+                contextlib.redirect_stdout(output):
+            with patch.dict(os.environ):
+                os.environ.pop("NO_COLOR", None)
+                report.end_report()
+        self.assertRegex(output.getvalue(), r"^\n\x1b\[1;36m\*END OF THE REPORT\* \(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} UTC\)\x1b\[0m\n$")
+
+
 class ReportTests(unittest.TestCase):
     def test_commitment_consumption_distinguishes_reported_and_derived_values(self):
         now = datetime(2026, 10, 23, tzinfo=timezone.utc)
@@ -103,7 +155,7 @@ class ReportTests(unittest.TestCase):
     def test_contract_countdown_uses_calendar_months_and_total_utc_days(self):
         now = datetime(2026, 10, 23, 10, tzinfo=timezone.utc)
         self.assertEqual(report.contract_countdown("2027-01-15T23:59:59Z", now),
-                         "2027-01-15 | 2 months 23 days remaining (84 days total)")
+                         "2027-01-15 | 0 years 2 months 23 days remaining (84 days total)")
         self.assertIn("Ends today", report.contract_countdown("2026-10-23T23:59:59Z", now))
         self.assertIn("Expired", report.contract_countdown("2026-10-22T23:59:59Z", now))
         self.assertEqual(report.contract_countdown(None, now), "Unavailable")
@@ -114,6 +166,9 @@ class ReportTests(unittest.TestCase):
         patcher = patch.object(report, "fetch_cost_usage", return_value=[])
         patcher.start()
         self.addCleanup(patcher.stop)
+        tenant = patch.object(report, "tenancy_name", return_value="Example Tenant")
+        tenant.start()
+        self.addCleanup(tenant.stop)
 
     def test_poc_credit_is_preserved_alongside_zero_standard_service(self):
         summary = {
@@ -196,12 +251,37 @@ class ReportTests(unittest.TestCase):
         self.assertEqual(report.CLI_REGION, "eu-frankfurt-1")
         self.assertTrue(render.call_args[0][-1])
 
+    def test_history_reminder_appears_once_before_subscription_counts(self):
+        for has_history, expanded in [(True, False), (True, True), (False, False)]:
+            with self.subTest(has_history=has_history, expanded=expanded):
+                def fake_cli(*args):
+                    if "organization-subscription" in args:
+                        return [{"id": "first"}, {"id": "second"}]
+                    if "subscription" in args:
+                        return [{"subscribed-services": [{"status": "EXPIRED" if has_history else "ACTIVE"}]}]
+                    return []
+                output = io.StringIO()
+                options = ["--region", "eu-frankfurt-1"] + (["--include-history"] if expanded else [])
+                with patch.dict(os.environ, {"OCI_TENANCY": "example-tenancy"}), \
+                        patch.object(report, "cli", side_effect=fake_cli), \
+                        patch.object(report, "render", side_effect=lambda *args: print("Rendered report")), \
+                        contextlib.redirect_stdout(output):
+                    self.assertEqual(report.main(options), 0)
+                text = output.getvalue()
+                message = "History found. Run with --include-history to view details."
+                self.assertEqual(text.count(message), int(has_history and not expanded))
+                if has_history and not expanded:
+                    self.assertIn("Rendered report\n\n" + message + "\nSubscriptions: 2", text)
+
 
 class ForecastTests(unittest.TestCase):
     def setUp(self):
         patcher = patch.object(report, "fetch_cost_usage", return_value=[])
         patcher.start()
         self.addCleanup(patcher.stop)
+        tenant = patch.object(report, "tenancy_name", return_value="Example Tenant")
+        tenant.start()
+        self.addCleanup(tenant.stop)
         self.now = datetime(2026, 10, 23, tzinfo=timezone.utc)
         self.record = {"id": "example-service", "time-start": "2026-09-01T00:00:00Z",
                        "time-end": "2026-11-02T00:00:00Z", "available-amount": "10000"}

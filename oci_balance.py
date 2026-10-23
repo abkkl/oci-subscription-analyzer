@@ -11,6 +11,7 @@ import calendar
 import threading
 import time
 import shutil
+import math
 from contextlib import contextmanager, nullcontext
 from decimal import Decimal, InvalidOperation
 from datetime import datetime, timedelta, timezone
@@ -91,6 +92,18 @@ def home_region(tenancy):
     return homes[0]
 
 
+def tenancy_name(tenancy, region=None):
+    args = ["iam", "tenancy", "get", "--tenancy-id", tenancy]
+    if region:
+        args.extend(["--region", region])
+    try:
+        data = cli_payload(*args).get("data")
+        name = data.get("name") if isinstance(data, dict) else None
+        return name.strip() if isinstance(name, str) and name.strip() else "Tenant name unavailable"
+    except (RuntimeError, OSError, AttributeError):
+        return "Tenant name unavailable"
+
+
 def shown(value):
     return "—" if value is None or str(value).strip().lower() in ("", "null", "none") else str(value)
 
@@ -138,7 +151,7 @@ def contract_countdown(value, as_of):
     if end <= as_of:
         return f"{last} | Expired"
     if days == 0:
-        return f"{last} | Ends today (0 days remaining)"
+        return f"{last} | Ends today: 0 years 0 months 0 days remaining (0 days total)"
     months = (last.year - today.year) * 12 + last.month - today.month
     def anniversary(count):
         year, month = divmod(today.year * 12 + today.month - 1 + count, 12)
@@ -148,7 +161,8 @@ def contract_countdown(value, as_of):
     if anniversary(months) > last:
         months -= 1
     remainder = (last - anniversary(months)).days
-    return f"{last} | {months} months {remainder} days remaining ({days} days total)"
+    years, months = divmod(months, 12)
+    return f"{last} | {years} years {months} months {remainder} days remaining ({days} days total)"
 
 
 def daily_usage(groups, service_id, currency, cutoff):
@@ -313,6 +327,17 @@ def commitment_consumed(commitment, as_of):
     return "—"
 
 
+def commitment_state(commitment, as_of):
+    start, end = timestamp(commitment.get("time-start")), timestamp(commitment.get("time-end"))
+    if start is None or end is None or end <= start:
+        return "—", "—"
+    if end <= as_of:
+        return "past", 0
+    if start > as_of:
+        return "future", math.ceil((end - start).total_seconds() / 86400)
+    return "active", max(0, (end.date() - as_of.astimezone(timezone.utc).date()).days)
+
+
 def is_historical(service, as_of):
     end = timestamp(service.get("time-end"))
     return service.get("status") == "EXPIRED" or (end is not None and end <= as_of)
@@ -322,19 +347,25 @@ def consumption_trend(rows, currency):
     month, week = rows[0]["rate"], rows[1]["rate"]
     if month is None or week is None:
         return "Comment: Consumption trend unavailable: complete 30-day and 7-day baselines required."
-    comparison = f"7-day average {number(week)} vs 30-day average {number(month)} {shown(currency)}/day"
+    comparison = f"7-day average {number(week)} {shown(currency)}/day vs 30-day average {number(month)} {shown(currency)}/day"
     if month == 0:
         detail = "no consumption in either window" if week == 0 else "consumption resumed from a zero baseline"
     else:
         change = (week / month - 1) * 100
         direction = "higher" if change > 0 else "lower" if change < 0 else "unchanged"
         detail = f"{abs(change):.1f}% {direction}; {week / month:.1f}x the 30-day average"
-    return f"Comment: Consumption trend: {comparison} ({detail})."
+    return f"Comment: Consumption trend: {comparison} -> {detail}."
 
 
 def heading(title):
     use_color = sys.stdout.isatty() and "NO_COLOR" not in os.environ and os.environ.get("TERM") != "dumb"
     print(f"\033[1;36m{title}\033[0m" if use_color else title)
+
+
+def end_report():
+    print()
+    completed = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+    heading(f"*END OF THE REPORT* ({completed})")
 
 
 def forecast_rows(record, daily, as_of, history_start=None):
@@ -442,7 +473,8 @@ def render_recent_forecast(service, currency, as_of, groups, usage_error=None, d
     for reason, labels in reasons.items():
         print(textwrap.fill(f"N/A ({', '.join(labels)}): {reason}", width=78))
     print()
-    print(textwrap.fill(consumption_trend(rows, currency), width=100))
+    print(consumption_trend(rows, currency))
+    print()
     print("Estimate = remaining credit - future consumption, minimum zero.")
     print("Missing days are not treated as zero.")
     print("Reported usage may still be delayed or revised.")
@@ -450,7 +482,7 @@ def render_recent_forecast(service, currency, as_of, groups, usage_error=None, d
 
 def table(headers, rows):
     widths = [max(len(str(row[i])) for row in [headers, *rows]) for i in range(len(headers))]
-    numeric_columns = [all(str(row[i]) == "—" or re.fullmatch(r"-?[\d,]+\.\d\*?", str(row[i])) for row in rows)
+    numeric_columns = [all(str(row[i]) == "—" or re.fullmatch(r"-?[\d,]+(?:\.\d)?\*?", str(row[i])) for row in rows)
                        for i in range(len(headers))]
     def line(row, is_header=False):
         return " | ".join(str(cell).rjust(widths[i]) if numeric_columns[i] and not is_header
@@ -466,9 +498,9 @@ def render(subscription_id, summaries, as_of=None, usage=None, usage_error=None,
     for summary in summaries:
         currency = (summary.get("currency") or {}).get("iso-code")
         print()
-        heading("=" * 78)
+        heading("=" * 156)
         heading(f"SUBSCRIPTION {subscription_id} | {shown(summary.get('status'))} | {shown(currency)}")
-        heading("=" * 78)
+        heading("=" * 156)
         services = summary.get("subscribed-services") or []
         if timestamp(summary.get("time-end")) is not None:
             heading(f"Contract end (UTC): {contract_countdown(summary['time-end'], as_of)}")
@@ -496,7 +528,6 @@ def render(subscription_id, summaries, as_of=None, usage=None, usage_error=None,
                     usage_date_range(overage_audit(s, currency, usage, as_of)) if not usage_error else "Unavailable"]
                    for s in historical])
             print("Overage covers returned records only; full historical coverage is unverified.")
-            print("Use --include-history for past service and commitment details.")
         omitted = [service for service in services if is_zero_credit_service(service)
                    and service not in historical and not actual_overage(service, currency, usage, as_of)]
         if omitted:
@@ -526,18 +557,19 @@ def render(subscription_id, summaries, as_of=None, usage=None, usage_error=None,
                       "original-promo-amount", "total-value", "funded-allocation-value", "used-amount", "available-amount")], number(overage)]])
             audit = overage_audit(service, currency, usage, as_of)
             if not usage_error:
-                print(textwrap.fill(
+                print()
+                print(
                     f"Overage audit (UTC): {usage_date_range(audit)} | Usage dates returned: "
                     f"{audit['days']}/{shown(audit['expected_days'])} | OVERAGE records: {audit['overage_rows']}. "
-                    "Amounts cover returned records only; full contract coverage is unverified.", width=100))
+                    "Amounts cover returned records only; full contract coverage is unverified.")
             commitments = service.get("commitment-services") or []
             print(f"\nCommitment periods: {len(commitments)}")
             if commitments:
                 table(
-                    ["Start UTC", "End UTC", "Quantity", "Net amount", "Funded", "Consumed", "Remaining"],
-                    [[date(c.get("time-start")), date(c.get("time-end")),
+                    ["Status", "Start UTC", "End UTC", "Quantity", "Net amount", "Funded", "Consumed", "Remaining", "Remaining days"],
+                    [[commitment_state(c, as_of)[0], date(c.get("time-start")), date(c.get("time-end")),
                       *[number(c.get(key)) for key in ("quantity", "line-net-amount", "funded-allocation-value")],
-                      commitment_consumed(c, as_of), number(c.get("available-amount"))]
+                      commitment_consumed(c, as_of), number(c.get("available-amount")), commitment_state(c, as_of)[1]]
                      for c in commitments],
                 )
                 if any(commitment_consumed(c, as_of).endswith("*") for c in commitments):
@@ -577,8 +609,9 @@ def main(argv=None):
     if not tenancy:
         print("ERROR: OCI_TENANCY is missing. Run this script in OCI Cloud Shell.", file=sys.stderr)
         return 1
-    print("OCI SUBSCRIPTION AND BALANCE REPORT")
-    print("Report version: 1.7 | ahmet.bakkal@oracle.com")
+    heading(f"OCI SUBSCRIPTION AND BALANCE REPORT ({tenancy_name(tenancy, args.region)})")
+    print()
+    print("Report version: 1.8 | ahmet.bakkal@oracle.com")
     print("Region note: Run Cloud Shell in the tenancy home region.")
     try:
         CLI_REGION = args.region or home_region(tenancy)
@@ -587,17 +620,23 @@ def main(argv=None):
         subscriptions = cli("onesubscription", "organization-subscription", "organization-subscription", "list", "--compartment-id", tenancy, "--all")
     except (RuntimeError, OSError) as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
+        end_report()
         return 1
     ids = list(dict.fromkeys(s["id"] for s in subscriptions if s.get("id")))
     if not ids:
         print("No accessible subscriptions found.")
+        end_report()
         return 0
     failed = 0
+    history_found = False
     for subscription_id in ids:
         try:
             summaries = cli("onesubscription", "subscription", "subscription", "list", "--compartment-id", tenancy, "--subscription-id", str(subscription_id), "--is-commit-info-required", "true", "--all")
             if not summaries:
                 raise RuntimeError("No subscription details returned.")
+            history_found = history_found or any(
+                is_historical(service, as_of) for summary in summaries
+                for service in summary.get("subscribed-services") or [])
             cutoff = as_of.replace(hour=0, minute=0, second=0, microsecond=0)
             cost_usage, cost_error = None, None
             try:
@@ -623,7 +662,11 @@ def main(argv=None):
         except (RuntimeError, OSError) as exc:
             failed += 1
             print(f"\nERROR [{subscription_id}]: {exc}", file=sys.stderr)
-    print(f"\nSubscriptions: {len(ids)} | Successful: {len(ids) - failed} | Failed: {failed}")
+    print()
+    if history_found and not args.include_history:
+        print("History found. Run with --include-history to view details.")
+    print(f"Subscriptions: {len(ids)} | Successful: {len(ids) - failed} | Failed: {failed}")
+    end_report()
     return 1 if failed else 0
 
 
