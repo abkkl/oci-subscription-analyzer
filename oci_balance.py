@@ -179,7 +179,7 @@ def daily_usage(groups, service_id, currency, cutoff):
             metered = timestamp(row.get("time-metered-on"))
             if metered is None:
                 raise ValueError("A matching usage record has no valid metered date.")
-            if metered >= cutoff or metered < cutoff - timedelta(days=30):
+            if metered >= cutoff or metered < cutoff - timedelta(days=90):
                 continue
             cost = decimal_value(row.get("cost-unrounded"))
             if cost is None:
@@ -195,7 +195,7 @@ def fetch_cost_usage(tenancy, subscription_id, cutoff):
     while True:
         args = ["usage-api", "usage-summary", "request-summarized-usages",
                 "--tenant-id", tenancy, "--granularity", "DAILY", "--query-type", "COST",
-                "--time-usage-started", (cutoff - timedelta(days=30)).isoformat(),
+                "--time-usage-started", (cutoff - timedelta(days=90)).isoformat(),
                 "--time-usage-ended", cutoff.isoformat(), "--group-by", '["subscriptionId"]',
                 "--filter", json.dumps({"operator": "AND", "dimensions": [
                     {"key": "subscriptionId", "value": str(subscription_id)}]}),
@@ -226,7 +226,7 @@ def subscription_daily_usage(rows, subscription_id, currency, cutoff):
         end = timestamp(row.get("time-usage-ended"))
         if start is None or end is None:
             raise ValueError("Cost Analysis returned a matching record without valid dates.")
-        if start < cutoff - timedelta(days=30) or end > cutoff or start >= cutoff:
+        if start < cutoff - timedelta(days=90) or end > cutoff or start >= cutoff:
             continue
         if start.time() != datetime.min.time() or end - start != timedelta(days=1):
             raise ValueError("Cost Analysis returned a non-daily usage interval.")
@@ -342,9 +342,8 @@ def commitment_state(commitment, as_of):
 
 def credit_label(label, kind=None):
     kind = kind or label
-    color = "33" if kind.startswith("Unused") else "31" if kind.startswith("Overage") else None
-    enabled = sys.stdout.isatty() and "NO_COLOR" not in os.environ and os.environ.get("TERM") != "dumb"
-    return f"\033[1;{color}m{label}\033[0m" if enabled and color else label
+    color = "33" if kind.startswith("Unused") else "31" if kind.startswith("Overage") else "32" if kind.startswith("Balanced") else None
+    return styled(label, color) if color else label
 
 
 def forecast_credit(row, days=None, factor=Decimal(1)):
@@ -378,22 +377,27 @@ def is_historical(service, as_of):
 
 
 def consumption_trend(rows, currency):
-    month, week = rows[0]["rate"], rows[1]["rate"]
-    if month is None or week is None:
-        return "Comment: Consumption trend unavailable: complete 30-day and 7-day baselines required."
-    comparison = f"7-day average {number(week)} {shown(currency)}/day vs 30-day average {number(month)} {shown(currency)}/day"
-    if month == 0:
+    rates = {row["label"]: row["rate"] for row in rows}
+    quarter, week = rates.get("Last 90 days"), rates.get("Last 7 days")
+    if quarter is None or week is None:
+        return "Consumption trend: unavailable: complete 90-day and 7-day baselines required."
+    comparison = f"7-day average {number(week)} {shown(currency)}/day vs 90-day average {number(quarter)} {shown(currency)}/day"
+    if quarter == 0:
         detail = "no consumption in either window" if week == 0 else "consumption resumed from a zero baseline"
     else:
-        change = (week / month - 1) * 100
+        change = (week / quarter - 1) * 100
         direction = "higher" if change > 0 else "lower" if change < 0 else "unchanged"
-        detail = f"{abs(change):.1f}% {direction}; {week / month:.1f}x the 30-day average"
-    return f"Comment: Consumption trend: {comparison} -> {detail}."
+        detail = f"{abs(change):.1f}% {direction}; {week / quarter:.1f}x the 90-day average"
+    return f"Consumption trend: {comparison} -> {detail}."
+
+
+def styled(title, color="36"):
+    use_color = sys.stdout.isatty() and "NO_COLOR" not in os.environ and os.environ.get("TERM") != "dumb"
+    return f"\033[1;{color}m{title}\033[0m" if use_color else title
 
 
 def heading(title, color="36"):
-    use_color = sys.stdout.isatty() and "NO_COLOR" not in os.environ and os.environ.get("TERM") != "dumb"
-    print(f"\033[1;{color}m{title}\033[0m" if use_color else title)
+    print(styled(title, color))
 
 
 def end_report():
@@ -403,7 +407,7 @@ def end_report():
 
 
 def forecast_rows(record, daily, as_of, history_start=None):
-    """Use fixed 30/7/1-day windows, excluding the current incomplete UTC day."""
+    """Use fixed 90/30/7/1-day windows, excluding the current incomplete UTC day."""
     start = timestamp(record.get("time-start"))
     history_start = history_start or start
     end = timestamp(record.get("time-end"))
@@ -415,7 +419,7 @@ def forecast_rows(record, daily, as_of, history_start=None):
     elif available is None or available < 0:
         horizon_error = "Missing/non-negative balance required"
     result = []
-    for days, label in ((30, "Last 30 days"), (7, "Last 7 days"), (1, "Previous day")):
+    for days, label in ((90, "Last 90 days"), (30, "Last 30 days"), (7, "Last 7 days"), (1, "Previous day")):
         first = cutoff - timedelta(days=days)
         dates = [(first + timedelta(days=i)).date() for i in range(days)]
         covered = sum(day in daily for day in dates)
@@ -440,7 +444,7 @@ def forecast_rows(record, daily, as_of, history_start=None):
     return result
 
 
-def render_recent_forecast(service, currency, as_of, groups, usage_error=None, daily_override=None):
+def forecast_inputs(service, currency, as_of, groups, usage_error=None, daily_override=None):
     cutoff = as_of.replace(hour=0, minute=0, second=0, microsecond=0)
     try:
         if daily_override is not None:
@@ -471,6 +475,13 @@ def render_recent_forecast(service, currency, as_of, groups, usage_error=None, d
     if usage_error:
         for row in rows:
             row.update(rate=None, unused=None, beyond=None, future=None, reason="Usage request failed")
+    return target, scope, rows, latest, usage_error
+
+
+def render_recent_forecast(service, currency, as_of, groups, usage_error=None, daily_override=None):
+    target, scope, rows, latest, usage_error = forecast_inputs(
+        service, currency, as_of, groups, usage_error, daily_override)
+    commitments = service.get("commitment-services") or []
     if all(row["reason"] for row in rows):
         reason = scope[len("Unavailable: "):] if scope.startswith("Unavailable:") else (
             f"Usage request failed: {usage_error}" if usage_error else
@@ -493,22 +504,23 @@ def render_recent_forecast(service, currency, as_of, groups, usage_error=None, d
     remaining = decimal_value(target.get("available-amount"))
     required = remaining / horizon_days if remaining is not None and horizon_days > 0 else None
     scenarios = list(reversed(rows))
-    heading("Baseline")
+    print("Baseline")
     for row in scenarios:
         print(f"{row['label']} (UTC): {row['first']} - {row['last']}")
+    print()
     print("Monthly calculation: 744 hours = 31 days.")
     print()
     table(
-        [f"Metric ({shown(currency)})", *[row["label"] for row in scenarios]],
+        [f"Metric ({shown(currency)})", *[styled(row["label"], "36") for row in scenarios]],
         [
             ["Remaining Credit", *[number(remaining) for row in scenarios]],
-            ["Future Consumption", *[number(row["future"]) for row in scenarios]],
+            [styled("Future Consumption", "36"), *[number(row["future"]) for row in scenarios]],
             ["Unused/Overage Credit - Total", *[forecast_credit(row) for row in scenarios]],
-            ["Actual Consumption - Daily", *[number(row["rate"]) for row in scenarios]],
             ["Required Consumption - Daily", *[number(required) for row in scenarios]],
+            [styled("Actual Consumption - Daily", "36"), *[number(row["rate"]) for row in scenarios]],
             ["Unused/Overage Credit - Daily", *[forecast_credit(row, horizon_days) for row in scenarios]],
-            ["Actual Consumption - Monthly", *[number(row["rate"] * Decimal(31)) if row["rate"] is not None else "—" for row in scenarios]],
             ["Required Consumption - Monthly", *[number(required * Decimal(31)) if required is not None else "—" for row in scenarios]],
+            [styled("Actual Consumption - Monthly", "36"), *[number(row["rate"] * Decimal(31)) if row["rate"] is not None else "—" for row in scenarios]],
             ["Unused/Overage Credit - Monthly", *[forecast_credit(row, horizon_days, factor=Decimal(31)) for row in scenarios]],
             ["Days to horizon", *[f"{number(horizon_days)} Days" for row in scenarios]],
             ["Coverage", *[row["coverage"] for row in scenarios]],
@@ -516,7 +528,7 @@ def render_recent_forecast(service, currency, as_of, groups, usage_error=None, d
                 "Overage estimate" if row["beyond"] > 0 else "Unused estimate" if row["unused"] > 0
                 else "Balanced estimate") for row in scenarios]],
         ],
-        right_columns=(1, 2, 3),
+        right_columns=(1, 2, 3, 4),
         group_starts=(3, 6, 9),
     )
     reasons = {}
@@ -553,14 +565,38 @@ def table(headers, rows, right_columns=(), group_starts=()):
         print(line(row))
 
 
+def cost_daily_override(subscription_id, summaries, service, currency, as_of, cost_usage):
+    if cost_usage is None or credit_pool_ids(summaries, currency) != {service.get("id")}:
+        return None
+    cutoff = as_of.replace(hour=0, minute=0, second=0, microsecond=0)
+    return subscription_daily_usage(cost_usage, subscription_id, currency, cutoff) or None
+
+
+def subscription_color(subscription_id, summary, summaries, as_of, usage, usage_error, cost_usage):
+    currency = (summary.get("currency") or {}).get("iso-code")
+    colors = set()
+    for service in summary.get("subscribed-services") or []:
+        try:
+            override = cost_daily_override(subscription_id, summaries, service, currency, as_of, cost_usage)
+        except ValueError:
+            override = None
+        _, _, rows, _, _ = forecast_inputs(service, currency, as_of, usage, usage_error, override)
+        week = next(row for row in rows if row["label"] == "Last 7 days")
+        if not week["reason"]:
+            colors.add("31" if week["beyond"] > 0 else "33" if week["unused"] > 0 else "32")
+    # With several pools, highlight any 7-day overage before unused or balanced.
+    return next((color for color in ("31", "33", "32") if color in colors), "33")
+
+
 def render(subscription_id, summaries, as_of=None, usage=None, usage_error=None, cost_usage=None, cost_error=None, include_history=False):
     as_of = as_of or datetime.now(timezone.utc)
     for summary in summaries:
         currency = (summary.get("currency") or {}).get("iso-code")
+        color = subscription_color(subscription_id, summary, summaries, as_of, usage, usage_error, cost_usage)
         print()
-        heading("=" * max(1, shutil.get_terminal_size((80, 24)).columns - 1), color="33")
-        heading(f"SUBSCRIPTION {subscription_id} | {shown(summary.get('status'))} | {shown(currency)}", color="33")
-        heading("=" * max(1, shutil.get_terminal_size((80, 24)).columns - 1), color="33")
+        heading("=" * max(1, shutil.get_terminal_size((80, 24)).columns - 1), color=color)
+        heading(f"SUBSCRIPTION {subscription_id} | {shown(summary.get('status'))} | {shown(currency)}", color=color)
+        heading("=" * max(1, shutil.get_terminal_size((80, 24)).columns - 1), color=color)
         services = summary.get("subscribed-services") or []
         if timestamp(summary.get("time-end")) is not None:
             heading(f"Contract end (UTC): {contract_countdown(summary['time-end'], as_of)}")
@@ -636,14 +672,10 @@ def render(subscription_id, summaries, as_of=None, usage=None, usage_error=None,
                     print("* Balance-based estimate: net amount minus remaining; may include adjustments.")
             daily_override = None
             candidates = credit_pool_ids(summaries, currency)
-            if cost_usage is not None and candidates == {service.get("id")}:
-                try:
-                    cutoff = as_of.replace(hour=0, minute=0, second=0, microsecond=0)
-                    daily = subscription_daily_usage(cost_usage, subscription_id, currency, cutoff)
-                    if daily:
-                        daily_override = daily
-                except ValueError as exc:
-                    cost_error = str(exc)
+            try:
+                daily_override = cost_daily_override(subscription_id, summaries, service, currency, as_of, cost_usage)
+            except ValueError as exc:
+                cost_error = str(exc)
             if cost_error:
                 print(f"\nCost Analysis unavailable: {cost_error}")
             elif len(candidates) > 1:
@@ -671,7 +703,7 @@ def main(argv=None):
         return 1
     heading(f"OCI SUBSCRIPTION AND BALANCE REPORT ({tenancy_name(tenancy, args.region)})")
     print()
-    print("Report version: 2.1 | ahmet.bakkal@oracle.com")
+    print("Report version: 2.3 | ahmet.bakkal@oracle.com")
     print("Region note: Run Cloud Shell in the tenancy home region.")
     try:
         CLI_REGION = args.region or home_region(tenancy)
@@ -708,7 +740,7 @@ def main(argv=None):
             try:
                 starts = [timestamp(s.get("time-start")) for summary in summaries
                           for s in summary.get("subscribed-services") or []]
-                usage_start = min([cutoff - timedelta(days=30)] + [s for s in starts if s is not None])
+                usage_start = min([cutoff - timedelta(days=90)] + [s for s in starts if s is not None])
                 usage = cli("onesubscription", "computed-usage", "aggregated-computed-usage-summary", "list-aggregated-computed-usages",
                             "--compartment-id", tenancy, "--subscription-id", str(subscription_id),
                             "--time-from", usage_start.isoformat(),

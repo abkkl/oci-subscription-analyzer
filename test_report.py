@@ -15,6 +15,44 @@ def service(sku, **values):
 
 
 class LayoutAndMetadataTests(unittest.TestCase):
+    def test_subscription_color_matches_seven_day_forecast_and_baseline_headers_match_metrics(self):
+        from test_overage import fixture, REFERENCE
+        for balance, color in [("1000", "31"), ("10000", "33")]:
+            with self.subTest(balance=balance):
+                data = fixture(balance=balance)
+                output = io.StringIO()
+                with patch.object(output, "isatty", return_value=True), \
+                        patch.dict(os.environ, {"TERM": "xterm"}), contextlib.redirect_stdout(output):
+                    with patch.dict(os.environ):
+                        os.environ.pop("NO_COLOR", None)
+                        report.render("SYNTHETIC-SUBSCRIPTION", data["summaries"], REFERENCE,
+                                      data["usage"], cost_usage=data["costs"])
+                text = output.getvalue()
+                self.assertIn(f"\033[1;{color}mSUBSCRIPTION", text)
+                self.assertIn(f"\033[1;{color}m====", text)
+                outcome = "Overage estimate" if color == "31" else "Unused estimate"
+                self.assertIn(f"\033[1;{color}m{outcome}", text)
+                for label in ["Previous day", "Last 7 days", "Last 30 days", "Future Consumption",
+                              "Actual Consumption - Daily", "Actual Consumption - Monthly"]:
+                    self.assertIn(f"\033[1;36m{label}\033[0m", text)
+                self.assertIn("\nBaseline\n", text)
+                self.assertNotIn("mBaseline", text)
+                self.assertIn("2026-07-25 - 2026-10-22\n\nMonthly calculation:", text)
+
+    def test_mixed_forecast_has_both_overage_and_unused_colors(self):
+        from test_overage import fixture, REFERENCE
+        data = fixture(rates=("200", "100", "50"))
+        output = io.StringIO()
+        with patch.object(output, "isatty", return_value=True), \
+                patch.dict(os.environ, {"TERM": "xterm"}), contextlib.redirect_stdout(output):
+            with patch.dict(os.environ):
+                os.environ.pop("NO_COLOR", None)
+                report.render("SYNTHETIC-SUBSCRIPTION", data["summaries"], REFERENCE,
+                              data["usage"], cost_usage=data["costs"])
+        self.assertIn("\033[1;31mOverage estimate\033[0m", output.getvalue())
+        self.assertIn("\033[1;33mUnused estimate\033[0m", output.getvalue())
+        self.assertIn("\033[1;31mSUBSCRIPTION", output.getvalue())
+
     def test_tenant_name_is_read_and_metadata_failure_does_not_stop_report(self):
         with patch.object(report, "cli_payload", return_value={"data": {"name": "Example Tenant"}}) as api:
             self.assertEqual(report.tenancy_name("ocid-example", "eu-frankfurt-1"), "Example Tenant")
@@ -40,8 +78,8 @@ class LayoutAndMetadataTests(unittest.TestCase):
 
     def test_trend_comment_is_one_line_in_requested_format(self):
         # Raw API rates round to 24.1 and 19.7 with a 22.2% increase.
-        comment = report.consumption_trend([{"rate": Decimal("19.72")}, {"rate": Decimal("24.10")}], "EUR")
-        self.assertEqual(comment, "Comment: Consumption trend: 7-day average 24.1 EUR/day vs 30-day average 19.7 EUR/day -> 22.2% higher; 1.2x the 30-day average.")
+        comment = report.consumption_trend([{"label": "Last 90 days", "rate": Decimal("19.72")}, {"label": "Last 7 days", "rate": Decimal("24.10")}], "EUR")
+        self.assertEqual(comment, "Consumption trend: 7-day average 24.1 EUR/day vs 90-day average 19.7 EUR/day -> 22.2% higher; 1.2x the 90-day average.")
 
     def test_report_audit_and_comment_spacing_and_separator_width(self):
         now = datetime(2026, 10, 23, tzinfo=timezone.utc)
@@ -54,7 +92,7 @@ class LayoutAndMetadataTests(unittest.TestCase):
         text = output.getvalue()
         self.assertIn("\n" + "=" * 79 + "\nSUBSCRIPTION", text)
         self.assertRegex(text, r"\n\nOverage audit \(UTC\):[^\n]+\n\nCommitment periods")
-        self.assertRegex(text, r"Comment: Consumption trend:[^\n]+\n\nEstimate =")
+        self.assertRegex(text, r"Consumption trend:[^\n]+\n\nEstimate =")
 
     def test_colored_footer_has_completion_timestamp_and_blank_line(self):
         output = io.StringIO()
@@ -121,7 +159,7 @@ class ReportTests(unittest.TestCase):
         self.assertEqual(report.number("0"), "0.0")
         now = datetime(2026, 10, 23, tzinfo=timezone.utc)
         record = {"time-start": "2026-01-01T00:00:00Z", "time-end": "2026-10-24T00:00:00Z", "available-amount": "1.23456"}
-        daily = {(now - timedelta(days=i)).date(): Decimal("0.12345") for i in range(1, 31)}
+        daily = {(now - timedelta(days=i)).date(): Decimal("0.12345") for i in range(1, 91)}
         self.assertEqual(report.forecast_rows(record, daily, now)[0]["unused"], Decimal("1.11111"))
 
     def test_actual_overage_uses_only_explicit_matching_records(self):
@@ -283,14 +321,16 @@ class ForecastTests(unittest.TestCase):
         tenant.start()
         self.addCleanup(tenant.stop)
         self.now = datetime(2026, 10, 23, tzinfo=timezone.utc)
-        self.record = {"id": "example-service", "time-start": "2026-09-01T00:00:00Z",
+        self.record = {"id": "example-service", "time-start": "2026-01-01T00:00:00Z",
                        "time-end": "2026-11-02T00:00:00Z", "available-amount": "10000"}
         self.daily = {}
-        for offset in range(1, 31):
+        for offset in range(1, 91):
             self.daily[(self.now - timedelta(days=offset)).date()] = Decimal(100 if offset == 1 else 20 if offset <= 7 else 10)
 
     def test_three_independent_forecasts_and_exact_window_dates(self):
-        month, week, previous = report.forecast_rows(self.record, self.daily, self.now)
+        quarter, month, week, previous = report.forecast_rows(self.record, self.daily, self.now)
+        self.assertEqual(quarter["rate"], Decimal(1050) / Decimal(90))
+        self.assertEqual(str(quarter["first"]), "2026-07-25")
         self.assertEqual(month["rate"], Decimal(15))
         self.assertEqual(month["unused"], Decimal(9850))
         self.assertEqual(week["rate"], Decimal(220) / Decimal(7))
@@ -298,6 +338,33 @@ class ForecastTests(unittest.TestCase):
         self.assertEqual(previous["unused"], Decimal(9000))
         self.assertEqual(str(month["first"]), "2026-09-23")
         self.assertEqual(str(previous["last"]), "2026-10-22")
+
+    def test_missing_older_day_only_disables_ninety_day_baseline_and_trend(self):
+        daily = dict(self.daily)
+        del daily[(self.now - timedelta(days=60)).date()]
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            report.render_recent_forecast(self.record, "EUR", self.now, [], daily_override=daily)
+        self.assertIn("89/90", output.getvalue())
+        self.assertIn("Consumption trend: unavailable: complete 90-day and 7-day baselines required.", output.getvalue())
+        outcome = next(line for line in output.getvalue().splitlines() if line.startswith("Forecast outcome"))
+        self.assertEqual([cell.strip() for cell in outcome.split("|")[1:]],
+                         ["Unused estimate", "Unused estimate", "Unused estimate", "N/A"])
+
+    def test_young_service_does_not_use_costs_before_its_start_for_ninety_days(self):
+        record = dict(self.record, **{"time-start": "2026-09-01T00:00:00Z"})
+        quarter, month, week, previous = report.forecast_rows(record, self.daily, self.now)
+        self.assertIsNone(quarter["rate"])
+        self.assertEqual(quarter["reason"], "Service history shorter than window")
+        self.assertTrue(all(row["reason"] is None for row in (month, week, previous)))
+
+    def test_trend_uses_ninety_days_instead_of_thirty(self):
+        rows = [{"label": "Last 30 days", "rate": Decimal(1000)},
+                {"label": "Last 7 days", "rate": Decimal(20)},
+                {"label": "Last 90 days", "rate": Decimal(10)}]
+        text = report.consumption_trend(rows, "TRY")
+        self.assertEqual(text, "Consumption trend: 7-day average 20.0 TRY/day vs 90-day average 10.0 TRY/day -> 100.0% higher; 2.0x the 90-day average.")
+        self.assertNotIn("Comment:", text)
 
     def test_compact_forecast_column_and_metric_order(self):
         output = io.StringIO()
@@ -308,16 +375,16 @@ class ForecastTests(unittest.TestCase):
         stop = next(i for i in range(start, len(lines)) if lines[i].startswith("Forecast outcome"))
         block = lines[start:stop + 1]
         self.assertEqual([c.strip() for c in block[0].split("|")],
-                         ["Metric (EUR)", "Previous day", "Last 7 days", "Last 30 days"])
+                         ["Metric (EUR)", "Previous day", "Last 7 days", "Last 30 days", "Last 90 days"])
         self.assertEqual([line.split("|")[0].strip() for line in block[2:] if "|" in line], [
             "Remaining Credit", "Future Consumption", "Unused/Overage Credit - Total",
-            "Actual Consumption - Daily", "Required Consumption - Daily", "Unused/Overage Credit - Daily",
-            "Actual Consumption - Monthly", "Required Consumption - Monthly", "Unused/Overage Credit - Monthly",
+            "Required Consumption - Daily", "Actual Consumption - Daily", "Unused/Overage Credit - Daily",
+            "Required Consumption - Monthly", "Actual Consumption - Monthly", "Unused/Overage Credit - Monthly",
             "Days to horizon", "Coverage", "Forecast outcome"])
         actual = next(line for line in block if line.startswith("Actual Consumption - Daily"))
-        self.assertEqual([c.strip() for c in actual.split("|")][1:], ["100.0", "31.4", "15.0"])
-        self.assertEqual([c.strip() for c in block[-1].split("|")][1:], ["Unused estimate"] * 3)
-        self.assertTrue(all(len(line) <= 90 for line in block))
+        self.assertEqual([c.strip() for c in actual.split("|")][1:], ["100.0", "31.4", "15.0", "11.7"])
+        self.assertEqual([c.strip() for c in block[-1].split("|")][1:], ["Unused estimate"] * 4)
+        self.assertTrue(all(len(line) <= 110 for line in block))
 
     def test_missing_previous_day_is_not_zero_consumption(self):
         del self.daily[(self.now - timedelta(days=1)).date()]
@@ -402,7 +469,7 @@ class ForecastTests(unittest.TestCase):
         self.assertEqual(total_line.split("|")[1].strip(), "10,000.0")
         result_line = next(line for line in text.splitlines() if line.startswith("Forecast outcome"))
         self.assertEqual([cell.strip() for cell in result_line.split("|")[1:]],
-                         ["Overage estimate", "Unused estimate", "Unused estimate"])
+                         ["Overage estimate", "Unused estimate", "Unused estimate", "Unused estimate"])
         self.assertIn("(10 days remaining; 10 days total)", text)
         self.assertNotIn("0 years", text)
 
@@ -431,7 +498,7 @@ class ForecastTests(unittest.TestCase):
 
     def test_trend_comment_handles_increase_decrease_zero_and_missing_data(self):
         def comment(month, week):
-            return report.consumption_trend([{"rate": month}, {"rate": week}], "EUR")
+            return report.consumption_trend([{"label": "Last 90 days", "rate": month}, {"label": "Last 7 days", "rate": week}], "EUR")
         self.assertIn("200.0% higher; 3.0x", comment(Decimal(10), Decimal(30)))
         self.assertIn("50.0% lower", comment(Decimal(20), Decimal(10)))
         self.assertIn("unchanged", comment(Decimal(10), Decimal(10)))
@@ -474,7 +541,7 @@ class ForecastTests(unittest.TestCase):
             code = report.main(["--as-of", "2026-10-23"])
         usage_call = next(c for c in calls if "list-aggregated-computed-usages" in c)
         self.assertIn("DAILY", usage_call)
-        self.assertIn("2026-09-01T00:00:00+00:00", usage_call)
+        self.assertIn("2026-01-01T00:00:00+00:00", usage_call)
         self.assertIn("2026-10-23T00:00:00+00:00", usage_call)
         self.assertEqual(code, 1)
         self.assertIn("10,000.0", output.getvalue())
@@ -502,12 +569,12 @@ class CostAnalysisTests(unittest.TestCase):
         return [{"subscription-id": subscription, "currency": currency,
                  "computed-amount": "10", "time-usage-started": (self.now - timedelta(days=i)).isoformat(),
                  "time-usage-ended": (self.now - timedelta(days=i-1)).isoformat()}
-                for i in range(1, 31)]
+                for i in range(1, 91)]
 
     def summaries(self):
         return [{"currency": {"iso-code": "TRY"}, "status": "ACTIVE", "subscribed-services": [
             service("PROMO", id="credit", **{"status": "ACTIVE", "original-promo-amount": "10000", "available-amount": "9000",
-                "time-start": "2026-08-01T00:00:00Z", "time-end": "2026-11-02T00:00:00Z"}),
+                "time-start": "2026-01-01T00:00:00Z", "time-end": "2026-11-02T00:00:00Z"}),
             service("STANDARD", id="zero", **{"available-amount": "0", "used-amount": "0"}),
         ]}]
 
@@ -556,8 +623,8 @@ class CostAnalysisTests(unittest.TestCase):
     def test_cost_records_exclude_other_subscription_currency_and_future_values(self):
         rows = self.costs() + self.costs("other") + self.costs(currency="EUR")
         result = report.subscription_daily_usage(rows, "example", "TRY", self.now)
-        self.assertEqual(len(result), 30)
-        self.assertEqual(sum(result.values()), Decimal(300))
+        self.assertEqual(len(result), 90)
+        self.assertEqual(sum(result.values()), Decimal(900))
 
     def test_pagination_is_followed(self):
         with patch.object(report, "cli_payload", side_effect=[
@@ -567,6 +634,8 @@ class CostAnalysisTests(unittest.TestCase):
             result = report.fetch_cost_usage("example-tenancy", "example", self.now)
         self.assertEqual(len(result), 2)
         self.assertIn("--page", mock_cli.call_args_list[1][0])
+        args = mock_cli.call_args_list[0][0]
+        self.assertEqual(args[args.index("--time-usage-started") + 1], "2026-07-25T00:00:00+00:00")
 
     def test_home_region_is_discovered_and_explicit_in_command(self):
         with patch.object(report, "cli", return_value=[
