@@ -85,7 +85,9 @@ def run_report(data):
                    OCI_TEST_FIXTURE=str(source), OCI_TENANCY="ocid1.tenancy.oc1..synthetic",
                    NO_COLOR="1")
         result = subprocess.run([sys.executable, str(Path(__file__).with_name("oci_balance.py")),
-                                 "--as-of", "2026-10-23"], env=env, capture_output=True, text=True)
+                                 "--as-of", "2026-10-23", "--output-dir", str(root / "reports")], env=env, capture_output=True, text=True)
+        exports = list((root / "reports").glob("*.html"))
+        result.html_report = exports[0].read_text() if exports else None
     return result
 
 
@@ -108,6 +110,9 @@ class OverageEndToEndTests(unittest.TestCase):
         result = run_report(data)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(result.stderr, "")
+        self.assertIsNotNone(result.html_report)
+        self.assertIn("SYNTHETIC-SUBSCRIPTION", result.html_report)
+        self.assertIn("*END OF THE REPORT*", result.html_report)
         self.assertIn("OCI SUBSCRIPTION AND BALANCE REPORT (Synthetic Test Tenant)", result.stdout)
         self.assertTrue(result.stdout.startswith("\nOCI SUBSCRIPTION AND BALANCE REPORT"))
         self.assertIn("Monthly calculation: 744 hours = 31 days\n", result.stdout)

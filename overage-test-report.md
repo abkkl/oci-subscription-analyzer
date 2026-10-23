@@ -1,6 +1,6 @@
-# Overage validation — version 2.6
+# Overage validation — version 2.7
 
-55 tests passed: 48 regression checks and 7 end-to-end scenarios. All data is synthetic. The temporary fake OCI CLI supplies responses to the real report subprocess; no live tenancy or credentials are used.
+67 tests passed: 48 regression checks, 12 HTML/frame tests and 7 end-to-end scenarios. All data is synthetic. The temporary fake OCI CLI supplies responses to the real report subprocess; no live tenancy or credentials are used.
 
 ## Full-overage scenario
 
@@ -48,3 +48,5 @@ This validates the implementation against controlled API responses. Live API ava
 90-day checks also confirm the exact 2026-07-25 → 2026-10-22 window and a 7-vs-90 trend. Missing dates and dates before service start are excluded from the denominator. An explicit zero-cost record still counts; no reported dates means N/A. Additional checks cover aligned labels/dates, a cyan trend prefix only, and unavailable results on API errors or malformed records.
 
 The [missing-days report](examples/sample-output-missing-days.txt) has 64 records at EUR 200/day: the average is 12,800 / 64 = 200, not 142.2. Coverage stays 64/90. No extra missing-record note is printed.
+
+HTML/frame tests cover default and custom output folders, --no-html, only the home-relative download code, escaping untrusted text, preserved colors, no spinner frames in HTML, exclusive file creation, owner-only permissions, partial failures, complete terminal frames and subscription rules matching forecast width.

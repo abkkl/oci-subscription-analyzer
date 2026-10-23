@@ -12,11 +12,143 @@ import threading
 import time
 import shutil
 import math
-from contextlib import contextmanager, nullcontext
+import html
+import io
+from pathlib import Path
+from contextlib import contextmanager, nullcontext, redirect_stdout, redirect_stderr
 from decimal import Decimal, InvalidOperation
 from datetime import datetime, timedelta, timezone
 
 CLI_REGION = None
+SGR = re.compile(r"\x1b\[([0-9;]*)m")
+
+
+class ReportStream:
+    """Keep the HTML transcript while forwarding normal terminal output."""
+    def __init__(self, terminal, transcript, html_colors=False, capture_only=False):
+        self.terminal = terminal
+        self.transcript = transcript
+        self.html_colors = html_colors
+        self.capture_only = capture_only
+
+    def isatty(self):
+        return self.terminal.isatty()
+
+    def write(self, value):
+        self.transcript.write(value)
+        if not self.capture_only:
+            self.terminal.write(value if self.isatty() else SGR.sub("", value))
+        return len(value)
+
+    def flush(self):
+        self.terminal.flush()
+
+
+def ansi_html(transcript):
+    colors = {"31": "overage", "32": "balanced", "33": "unused", "34": "blue", "36": "cyan"}
+    result, position, opened = [], 0, False
+    for match in SGR.finditer(transcript):
+        result.append(html.escape(transcript[position:match.start()]))
+        if opened:
+            result.append("</span>")
+            opened = False
+        codes = match.group(1).split(";")
+        color = next((colors[code] for code in reversed(codes) if code in colors), None)
+        if color:
+            result.append(f'<span class="{color}">')
+            opened = True
+        position = match.end()
+    result.append(html.escape(transcript[position:]))
+    if opened:
+        result.append("</span>")
+    return "".join(result)
+
+
+def html_document(transcript):
+    body = ansi_html(transcript)
+    return '''<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>OCI Subscription and Balance Report</title>
+<style>
+:root{color-scheme:dark}*{box-sizing:border-box}
+body{margin:0;padding:28px;background:#101820;color:#e8edf2;font:15px system-ui,sans-serif}
+header{display:flex;justify-content:space-between;align-items:center;gap:20px;margin-bottom:20px}
+h1{font-size:21px;margin:0}header p{color:#aebfcd;margin:7px 0 0;font-size:13px}
+button{border:1px solid #4e697c;background:#203748;color:#fff;border-radius:8px;padding:11px 16px;cursor:pointer;white-space:nowrap}
+.report-frame{border:2px solid #4e697c;border-radius:14px;background:#16222d;padding:24px}
+main{overflow:auto}
+pre{font:13px/1.65 ui-monospace,SFMono-Regular,Consolas,"Liberation Mono",monospace;white-space:pre;margin:0;tab-size:4}
+.overage{color:#ff7a85;font-weight:600}.unused{color:#f4d06f;font-weight:600}
+.balanced{color:#82d6ab;font-weight:600}.cyan{color:#83dacf;font-weight:600}.blue{color:#88baff;font-weight:600}
+@media print{@page{size:A3 landscape;margin:12mm}:root{color-scheme:light}body{background:#fff;color:#17212b;padding:0}header button{display:none}.report-frame{border:1px solid #657786;background:#fff;padding:12px}main{overflow:visible}pre{font-size:9px}.overage{color:#ae192b}.unused{color:#8a5a00}.balanced{color:#116142}.cyan{color:#00645d}.blue{color:#174da3}}
+</style></head><body>
+<section class="report-frame">
+<header><div><h1>OCI Subscription and Balance Report</h1><p>Saved report · Offline HTML</p></div>
+<button type="button" onclick="window.print()">Print / Save as PDF</button></header>
+<main><pre>''' + body + '''</pre></main></section></body></html>
+'''
+
+
+def export_destination(output_dir=None):
+    folder = Path(output_dir).expanduser() if output_dir else Path.home() / "oci-subscription-analyzer-reports"
+    if not folder.is_absolute():
+        folder = Path.home() / folder
+    folder.mkdir(parents=True, exist_ok=True)
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S-%f")
+    return folder.resolve() / f"oci-report-{stamp}.html"
+
+
+def write_html(destination, transcript):
+    document = html_document(transcript)
+    # Exclusive creation protects earlier exports; reports may contain account data.
+    descriptor = os.open(str(destination), os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8") as file:
+            file.write(document)
+    except BaseException:
+        destination.unlink()
+        raise
+
+
+def table_widths(transcript):
+    return [len(line) for line in SGR.sub("", transcript).splitlines()
+            if re.fullmatch(r"-+(?:\+-+)+", line)]
+
+
+def ansi_wrapped_lines(value, width):
+    """Wrap long prose without counting ANSI codes or coloring frame borders."""
+    parts = re.split(r"(\x1b\[[0-9;]*m)", value)
+    lines, current, active, visible = [], "", "", 0
+    for part in parts:
+        if SGR.fullmatch(part):
+            current += part
+            active = "" if part in ("\033[0m", "\033[m") else part
+            continue
+        for char in part:
+            if visible == width:
+                lines.append(current + ("\033[0m" if active else ""))
+                current, visible = active, 0
+            current += char
+            visible += 1
+    lines.append(current + ("\033[0m" if active else ""))
+    return lines
+
+
+def boxed_report(transcript):
+    widths = table_widths(transcript)
+    width = max(widths) if widths else max(20, min(100, shutil.get_terminal_size((80, 24)).columns - 4))
+    # Keep the copy/paste download code on a single physical line.
+    paths = [len(line) for line in SGR.sub("", transcript).splitlines() if line.endswith(".html")]
+    width = max([width, *paths])
+    border = "+" + "-" * (width + 2) + "+"
+    lines = ["", border]
+    for source in transcript.strip("\n").splitlines():
+        for line in ansi_wrapped_lines(source, width):
+            padding = " " * (width - len(SGR.sub("", line)))
+            lines.append("| " + line + padding + " |")
+    lines.extend([border, "", ""])
+    return "\n".join(lines)
 
 
 @contextmanager
@@ -26,6 +158,8 @@ def loading(stage):
     if not stream.isatty() or os.environ.get("TERM") == "dumb":
         yield
         return
+    # Spinner frames belong only on the terminal, never in the HTML transcript.
+    stream = getattr(stream, "terminal", stream)
     stopped = threading.Event()
     started = time.monotonic()
     color = "NO_COLOR" not in os.environ
@@ -54,14 +188,17 @@ def loading(stage):
 
 def cli_payload(*args):
     region_args = ["--region", CLI_REGION] if CLI_REGION else []
-    stage = ("Cost analysis" if "usage-api" in args else
+    stage = ("Tenant information" if "tenancy" in args and "get" in args else
+             "Detecting home region" if "region-subscription" in args else
+             "Cost analysis" if "usage-api" in args else
              "Consumption & overage" if "computed-usage" in args else
              "Discovering subscriptions" if "organization-subscription" in args else
              "Subscription balances")
     if "--subscription-id" in args:
         stage += f" · {args[args.index('--subscription-id') + 1]}"
-    # Home-region discovery precedes the animated loading stages.
-    with loading(stage) if CLI_REGION else nullcontext():
+    label = f"{CLI_REGION} · {stage}" if CLI_REGION else stage
+    # Framed reports are buffered, so keep early metadata lookups visibly active.
+    with loading(label) if CLI_REGION or getattr(sys.stdout, "capture_only", False) else nullcontext():
         result = subprocess.run(
             ["oci", *region_args, *args, "--output", "json"], capture_output=True, text=True
         )
@@ -392,7 +529,7 @@ def consumption_trend(rows, currency):
 
 
 def styled(title, color="36"):
-    use_color = sys.stdout.isatty() and "NO_COLOR" not in os.environ and os.environ.get("TERM") != "dumb"
+    use_color = (sys.stdout.isatty() or getattr(sys.stdout, "html_colors", False)) and "NO_COLOR" not in os.environ and os.environ.get("TERM") != "dumb"
     return f"\033[1;{color}m{title}\033[0m" if use_color else title
 
 
@@ -400,11 +537,22 @@ def heading(title, color="36"):
     print(styled(title, color))
 
 
-def end_report():
-    print()
+def report_footer(destination=None):
+    lines = [""]
+    if destination is not None:
+        try:
+            relative = destination.relative_to(Path.home().resolve())
+            lines.append(relative.as_posix())
+        except ValueError:
+            lines.append("HTML exported outside home; Cloud Shell Download file cannot access this location.")
+        lines.append("")
     completed = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
-    heading(f"*END OF THE REPORT* ({completed})")
-    print()
+    lines.extend([styled(f"*END OF THE REPORT* ({completed})"), "", ""])
+    return "\n".join(lines)
+
+
+def end_report():
+    print(report_footer(), end="")
 
 
 def forecast_rows(record, daily, as_of, history_start=None):
@@ -595,15 +743,29 @@ def subscription_color(subscription_id, summary, summaries, as_of, usage, usage_
     return next((color for color in ("31", "33", "32") if color in colors), "33")
 
 
+def subscription_rule_width(subscription_id, summary, summaries, as_of, usage, usage_error, cost_usage):
+    currency = (summary.get("currency") or {}).get("iso-code")
+    preview = io.StringIO()
+    with redirect_stdout(preview):
+        for service in summary.get("subscribed-services") or []:
+            try:
+                override = cost_daily_override(subscription_id, summaries, service, currency, as_of, cost_usage)
+            except ValueError:
+                override = None
+            render_recent_forecast(service, currency, as_of, usage, usage_error, override)
+    return max(table_widths(preview.getvalue()), default=max(1, shutil.get_terminal_size((80, 24)).columns - 4))
+
+
 def render(subscription_id, summaries, as_of=None, usage=None, usage_error=None, cost_usage=None, cost_error=None, include_history=False):
     as_of = as_of or datetime.now(timezone.utc)
     for summary in summaries:
         currency = (summary.get("currency") or {}).get("iso-code")
         color = subscription_color(subscription_id, summary, summaries, as_of, usage, usage_error, cost_usage)
+        rule_width = subscription_rule_width(subscription_id, summary, summaries, as_of, usage, usage_error, cost_usage)
         print()
-        heading("=" * max(1, shutil.get_terminal_size((80, 24)).columns - 1), color=color)
+        heading("=" * rule_width, color=color)
         heading(f"SUBSCRIPTION {subscription_id} | {shown(summary.get('status'))} | {shown(currency)}", color=color)
-        heading("=" * max(1, shutil.get_terminal_size((80, 24)).columns - 1), color=color)
+        heading("=" * rule_width, color=color)
         services = summary.get("subscribed-services") or []
         if timestamp(summary.get("time-end")) is not None:
             heading(f"Contract end (UTC): {contract_countdown(summary['time-end'], as_of)}")
@@ -697,6 +859,8 @@ def main(argv=None):
     parser.add_argument("--region", metavar="REGION", help="Use this tenancy home region for all OCI calls, skipping automatic home-region discovery. Example: eu-frankfurt-1. Other regions may be rejected by billing APIs.")
     parser.add_argument("--as-of", metavar="YYYY-MM-DD", help="Forecast reference date at 00:00 UTC; defaults to the current UTC time. Uses current API balances; this option does not retrieve historical balances.")
     parser.add_argument("--include-history", action="store_true", help="Show full details for past services and commitment periods; default: a history summary.")
+    parser.add_argument("--output-dir", metavar="DIRECTORY", help="HTML output folder; default: ~/oci-subscription-analyzer-reports. Relative folders are resolved under home.")
+    parser.add_argument("--no-html", action="store_true", help="Print the terminal report without saving an HTML file.")
     args = parser.parse_args(argv)
     as_of = datetime.now(timezone.utc)
     if args.as_of:
@@ -708,10 +872,39 @@ def main(argv=None):
     if not tenancy:
         print("ERROR: OCI_TENANCY is missing. Run this script in OCI Cloud Shell.", file=sys.stderr)
         return 1
+    terminal = sys.stdout
+    framed = terminal.isatty() and os.environ.get("TERM") != "dumb"
+    transcript = io.StringIO()
+    output = ReportStream(terminal, transcript, html_colors=not args.no_html, capture_only=framed)
+    errors = ReportStream(sys.stderr, transcript)
+    with redirect_stdout(output), redirect_stderr(errors):
+        status = run_terminal_report(args, as_of, tenancy)
+        if args.no_html:
+            end_report()
+        else:
+            try:
+                destination = export_destination(args.output_dir)
+                footer = report_footer(destination)
+                write_html(destination, transcript.getvalue() + footer)
+            except OSError as exc:
+                print(f"ERROR: HTML export failed: {exc}", file=sys.stderr)
+                end_report()
+                status = 1
+            else:
+                sys.stdout.write(footer)
+                sys.stdout.flush()
+    if framed:
+        terminal.write(boxed_report(transcript.getvalue()))
+        terminal.flush()
+    return status
+
+
+def run_terminal_report(args, as_of, tenancy):
+    global CLI_REGION
     print()
     heading(f"OCI SUBSCRIPTION AND BALANCE REPORT ({tenancy_name(tenancy, args.region)})")
     print()
-    print("Report version: 2.6 | ahmet.bakkal@oracle.com")
+    print("Report version: 2.7 | ahmet.bakkal@oracle.com")
     print("Region note: Run Cloud Shell in the tenancy home region.")
     try:
         CLI_REGION = args.region or home_region(tenancy)
@@ -720,12 +913,10 @@ def main(argv=None):
         subscriptions = cli("onesubscription", "organization-subscription", "organization-subscription", "list", "--compartment-id", tenancy, "--all")
     except (RuntimeError, OSError) as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
-        end_report()
         return 1
     ids = list(dict.fromkeys(s["id"] for s in subscriptions if s.get("id")))
     if not ids:
         print("No accessible subscriptions found.")
-        end_report()
         return 0
     failed = 0
     history_found = False
@@ -766,7 +957,6 @@ def main(argv=None):
     if history_found and not args.include_history:
         print("History found. Run with --include-history to view details.")
     print(f"Subscriptions: {len(ids)} | Successful: {len(ids) - failed} | Failed: {failed}")
-    end_report()
     return 1 if failed else 0
 
 

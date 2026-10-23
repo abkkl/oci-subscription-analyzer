@@ -25,6 +25,8 @@ python3 oci_balance.py --region eu-frankfurt-1
 | `--region REGION` | Use the specified tenancy home region; skip automatic discovery. Other regions may be rejected by billing APIs. |
 | `--include-history` | Expand past services and commitment details. Default: history summary. |
 | `--as-of YYYY-MM-DD` | Set the forecast reference to midnight UTC. Balances remain live; this is not a historical balance report. Default: current UTC time. |
+| `--output-dir DIRECTORY` | HTML folder; default `~/oci-subscription-analyzer-reports`. Relative folders resolve under home. Keep it under home for Cloud Shell downloads. |
+| `--no-html` | Disable the default HTML export; terminal report remains available. |
 | `--help`, `-h` | Show help and exit. |
 
 Combine options:
@@ -33,7 +35,24 @@ Combine options:
 python3 oci_balance.py --region eu-frankfurt-1 --include-history --as-of 2026-10-23
 ```
 
-Set `NO_COLOR=1` to disable color. Loading animation appears only in interactive terminals.
+### Download the HTML report
+
+HTML is saved automatically under `~/oci-subscription-analyzer-reports/`, with a unique timestamped filename. Just above the end marker, the terminal prints only the home-relative code to paste into Cloud Shell's **Download file** dialog:
+
+```text
+oci-subscription-analyzer-reports/oci-report-20261023-150000-123456.html
+```
+
+Copy the path printed by your run; do not add `/` or `~/`. Open the downloaded HTML in a browser. It works offline, preserves colors and has a **Print / Save as PDF** button.
+
+```bash
+python3 oci_balance.py --output-dir customer-reports
+python3 oci_balance.py --no-html
+```
+
+Both terminal and HTML have a full outer frame. Subscription `=` separators match the forecast-table width. Long terminal prose wraps inside the frame; tables and the download code stay intact. Terminal reports are collected while the live spinner shows progress, then printed as a complete frame. Redirected output stays plain for scripting.
+
+Set `NO_COLOR=1` to disable color. The spinner is omitted from saved HTML. Exports do not overwrite existing files; account reports are created with owner-only file permissions. Export errors preserve the terminal report and return exit code 1.
 
 The tenant name is read from IAM; if permission is unavailable, the header says `Tenant name unavailable`. The colored end marker includes completion date/time in UTC.
 
@@ -41,7 +60,7 @@ The download command uses the version published on GitHub. To run a locally supp
 
 ## Report contents
 
-- Colored tenant/subscription/service headings, terminal-width separators and contract countdowns in years, months and days (zero components omitted).
+- Colored tenant/subscription/service headings, table-width separators and contract countdowns in years, months and days (zero components omitted).
 - Balances, reported overage and commitment periods with active/past/future status and remaining days.
 - Compact forecast: metrics as rows; columns ordered Previous day, Last 7 days, Last 30 days, Last 90 days. Exact UTC date ranges appear above the table.
 - Consumption trend: 7-day versus 90-day average (without the Comment prefix).
@@ -96,43 +115,7 @@ All reports are fictional; browse the [examples folder](examples/README.md).
 
 Fictional examples: [default report](examples/sample-output.txt) · [expanded history](examples/sample-output-history.txt) · [missing days](examples/sample-output-missing-days.txt).
 
-Forecast excerpt (fictional data; full report linked above):
-
-```text
-FORECAST (EUR) | Horizon: Active commitment end - 2026-11-02 (10 days remaining; 10 days total)
-
-Balance snapshot UTC: 2026-10-23 00:00:00
-Latest reported completed usage day (UTC): 2026-10-22
-Future renewals and credit rollover are not forecast.
-
-Baseline
-Previous day (UTC): 2026-10-22 - 2026-10-22
- Last 7 days (UTC): 2026-10-16 - 2026-10-22
-Last 30 days (UTC): 2026-09-23 - 2026-10-22
-Last 90 days (UTC): 2026-07-25 - 2026-10-22
-
-Monthly calculation: 744 hours = 31 days
-
-Metric (EUR)                     | Previous day     | Last 7 days      | Last 30 days    | Last 90 days
----------------------------------+------------------+------------------+-----------------+----------------
-        Remaining Credit - Total |          1,000.0 |          1,000.0 |         1,000.0 |         1,000.0
-  Forecasted Consumption - Total |          2,000.0 |          1,142.9 |           650.0 |           550.0
-   Unused/Overage Credit - Total |          1,000.0 |            142.9 |           350.0 |           450.0
----------------------------------+------------------+------------------+-----------------+----------------
-    Required Consumption - Daily |            100.0 |            100.0 |           100.0 |           100.0
-  Forecasted Consumption - Daily |            200.0 |            114.3 |            65.0 |            55.0
-   Unused/Overage Credit - Daily |            100.0 |             14.3 |            35.0 |            45.0
----------------------------------+------------------+------------------+-----------------+----------------
-  Required Consumption - Monthly |          3,100.0 |          3,100.0 |         3,100.0 |         3,100.0
-Forecasted Consumption - Monthly |          6,200.0 |          3,542.9 |         2,015.0 |         1,705.0
- Unused/Overage Credit - Monthly |          3,100.0 |            442.9 |         1,085.0 |         1,395.0
----------------------------------+------------------+------------------+-----------------+----------------
-                 Days to horizon |        10.0 Days |        10.0 Days |       10.0 Days |       10.0 Days
-                        Coverage |              1/1 |              7/7 |           30/30 |           90/90
-                Forecast outcome | Overage estimate | Overage estimate | Unused estimate | Unused estimate
-
-Consumption trend: 7-day average 114.3 EUR/day vs 90-day average 55.0 EUR/day -> 107.8% higher; 2.1x the 90-day average.
-```
+HTML preview: [mixed forecast](examples/sample-output-mixed.html). Full terminal and HTML reports are available in [examples/](examples/README.md).
 
 | Issue | Check |
 | --- | --- |
@@ -150,8 +133,8 @@ Failures do not stop other subscriptions. Exit code `1` means a request error/pa
 python3 -m unittest discover -v
 ```
 
-The suite includes seven end-to-end scenarios using a temporary fake OCI CLI: overage, unused, balanced, mixed, exhausted credit with existing overage, zero consumption and missing records. It runs the real report and subprocess path without connecting to OCI.
+The suite includes HTML/frame tests and seven end-to-end scenarios using a temporary fake OCI CLI: overage, unused, balanced, mixed, exhausted credit with existing overage, zero consumption and missing records. It runs the real report and subprocess path without connecting to OCI.
 
 See [overage test report](overage-test-report.md), [full overage output](examples/sample-output-overage.txt) and [exhausted-credit output](examples/sample-output-exhausted.txt).
 
-Version **2.6** · ahmet.bakkal@oracle.com
+Version **2.7** · ahmet.bakkal@oracle.com

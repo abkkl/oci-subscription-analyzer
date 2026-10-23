@@ -91,7 +91,10 @@ class LayoutAndMetadataTests(unittest.TestCase):
         with patch.object(report.shutil, "get_terminal_size", return_value=os.terminal_size((80, 24))), contextlib.redirect_stdout(output):
             report.render("example", summary, now, cost_usage=fixture.costs())
         text = output.getvalue()
-        self.assertIn("\n" + "=" * 79 + "\nSUBSCRIPTION", text)
+        rules = [line for line in text.splitlines() if line and set(line) == {"="}]
+        separator = next(line for line in text.splitlines() if "-+-" in line and line.startswith("-----"))
+        forecast_separator = max(report.table_widths(text))
+        self.assertEqual(len(rules[0]), forecast_separator)
         self.assertRegex(text, r"\n\nOverage audit \(UTC\):[^\n]+\n\nCommitment periods")
         self.assertRegex(text, r"Consumption trend:[^\n]+\n\nReported usage")
 
@@ -265,7 +268,7 @@ class ReportTests(unittest.TestCase):
         with patch.dict(os.environ, {"OCI_TENANCY": "example-tenancy"}), \
                 patch.object(report, "cli", side_effect=fake_cli), \
                 contextlib.redirect_stdout(output), contextlib.redirect_stderr(errors):
-            status = report.main([])
+            status = report.main(["--no-html"])
         self.assertEqual(status, 1)
         self.assertIn("SUBSCRIPTION allowed", output.getvalue())
         self.assertIn("Successful: 1 | Failed: 1", output.getvalue())
@@ -284,7 +287,7 @@ class ReportTests(unittest.TestCase):
                 patch.object(report, "home_region") as discover, \
                 patch.object(report, "cli", side_effect=fake_cli), \
                 patch.object(report, "render") as render, contextlib.redirect_stdout(io.StringIO()):
-            result = report.main(["--region", "eu-frankfurt-1", "--include-history"])
+            result = report.main(["--region", "eu-frankfurt-1", "--include-history", "--no-html"])
         self.assertEqual(result, 0)
         discover.assert_not_called()
         self.assertEqual(report.CLI_REGION, "eu-frankfurt-1")
@@ -300,7 +303,7 @@ class ReportTests(unittest.TestCase):
                         return [{"subscribed-services": [{"status": "EXPIRED" if has_history else "ACTIVE"}]}]
                     return []
                 output = io.StringIO()
-                options = ["--region", "eu-frankfurt-1"] + (["--include-history"] if expanded else [])
+                options = ["--region", "eu-frankfurt-1", "--no-html"] + (["--include-history"] if expanded else [])
                 with patch.dict(os.environ, {"OCI_TENANCY": "example-tenancy"}), \
                         patch.object(report, "cli", side_effect=fake_cli), \
                         patch.object(report, "render", side_effect=lambda *args: print("Rendered report")), \
@@ -592,7 +595,7 @@ class ForecastTests(unittest.TestCase):
         with patch.dict(os.environ, {"OCI_TENANCY": "example-tenancy"}), \
                 patch.object(report, "cli", side_effect=fake_cli), \
                 contextlib.redirect_stdout(output), contextlib.redirect_stderr(errors):
-            code = report.main(["--as-of", "2026-10-23"])
+            code = report.main(["--as-of", "2026-10-23", "--no-html"])
         usage_call = next(c for c in calls if "list-aggregated-computed-usages" in c)
         self.assertIn("DAILY", usage_call)
         self.assertIn("2026-01-01T00:00:00+00:00", usage_call)
