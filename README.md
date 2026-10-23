@@ -55,7 +55,7 @@ The horizon is the **unique active commitment's end**, or the service contract e
 
 Let `B` = remaining credit, `R` = baseline daily consumption and `D` = fractional days to the forecast horizon:
 
-Subscription headings and separators match the Last 7 days forecast: unused yellow, overage red, balanced green. With multiple pools, any 7-day overage takes priority; unavailable forecasts retain yellow. `Baseline` is uncolored; a blank line precedes the monthly calculation note. Baseline column headings and the three baseline-dependent metric labels (Forecasted Consumption, Forecasted Consumption - Daily/Monthly) are cyan. Only the `Consumption trend:` prefix is blue; the rest of its text stays uncolored. Baseline date columns and the ends of Daily/Monthly metric labels are aligned. The table header includes currency. Columns are Previous day, Last 7 days, Last 30 days and Last 90 days. Rows are divided into four groups:
+Subscription headings and separators match the Last 7 days forecast: unused yellow, overage red, balanced green. With multiple pools, any 7-day overage takes priority; unavailable forecasts retain yellow. `Baseline` is uncolored; a blank line precedes the monthly calculation note. Baseline column headings and the three baseline-dependent metric labels (Forecasted Consumption, Forecasted Consumption - Daily/Monthly) are cyan. Only the `Consumption trend:` prefix is cyan, matching Forecasted Consumption; the rest of its text stays uncolored. Baseline date columns and the ends of Daily/Monthly metric labels are aligned. The table header includes currency. Columns are Previous day, Last 7 days, Last 30 days and Last 90 days. Rows are divided into four groups:
 
 | Group | Metric | Meaning |
 | --- | --- | --- |
@@ -63,7 +63,7 @@ Subscription headings and separators match the Last 7 days forecast: unused yell
 | | Forecasted Consumption | `R × D`. |
 | | Unused/Overage Credit - Total | Unused = `max(0, B − R × D)`; overage = `max(0, R × D − B)`. |
 | Daily | Required Consumption - Daily | `B / D`, needed to use credit by the horizon. |
-| | Forecasted Consumption - Daily | `R`, the selected baseline's average, including zero-filled days. |
+| | Forecasted Consumption - Daily | `R` = sum of reported daily costs / number of reported days within the baseline. |
 | | Unused/Overage Credit - Daily | Unused or overage total divided by `D`. |
 | Monthly | Required Consumption - Monthly | Required daily consumption × 31. |
 | | Forecasted Consumption - Monthly | `R × 31`, a monthly equivalent of the baseline, not an actual calendar-month bill. |
@@ -76,9 +76,9 @@ The horizon heading also shows remaining calendar years/months/days and total ca
 
 Cost Analysis supplies subscription-level daily costs only when a single active credit pool is identified in that currency, assuming those costs consume that pool. Otherwise, exact service-level OneSubscription usage is used.
 
-Usage requests cover 90 complete UTC days. Missing daily forecast records are treated as **zero**, including dates before the service start. Each average uses its full 1/7/30/90-day denominator. `Coverage` retains the actual returned-date count. Below the table, after a blank line, a dynamic note lists how many days were zero-filled in each baseline (for example, Last 90 days: 26 days).
+Usage requests cover 90 complete UTC days. Each baseline average uses **only reported daily records**: for `64/90` coverage, divide the sum of the 64 reported dates by **64**, not 90. Missing dates and dates before service start are excluded. An explicitly reported zero-cost day still counts. Coverage is the only missing-day indicator; no separate missing-record note is printed.
 
-A successful empty usage response is zero-filled; API errors, malformed matching records, missing service/currency identifiers and invalid forecast periods remain unavailable. Reported overage and balance fields are not zero-filled. Ingestion delays can therefore lower a zero-filled average. Estimates assume steady consumption and no renewals or rollover; they are not invoices.
+No reported dates (`0/N`) means N/A rather than a zero rate. API errors, malformed matching records, missing service/currency identifiers and invalid forecast periods remain unavailable. The 7-vs-90 consumption trend uses these same reported-day averages. Estimates assume steady consumption and no renewals or rollover; they are not invoices.
 
 Commitment `Credit status` follows Status: positive reported remaining balance = Unused credit; a negative balance or eligible reported used amount above net = Overage credit. Future and indeterminate cases show `--`. This describes reported commitment data, not a forecast or an inferred invoice total.
 
@@ -131,9 +131,6 @@ Days to horizon                  |        10.0 Days |        10.0 Days |       1
 Coverage                         |              1/1 |              7/7 |           30/30 |           90/90
 Forecast outcome                 | Overage estimate | Overage estimate | Unused estimate | Unused estimate
 
-Missing daily records treated as zero: Previous day: 0 days | Last 7 days: 0 days | Last 30 days: 0 days | Last 90 days: 0 days.
-Averages use the full baseline window; dates before service start are also zero-filled.
-
 Consumption trend: 7-day average 114.3 EUR/day vs 90-day average 55.0 EUR/day -> 107.8% higher; 2.1x the 90-day average.
 ```
 
@@ -143,7 +140,7 @@ Consumption trend: 7-day average 114.3 EUR/day vs 90-day average 55.0 EUR/day ->
 | Region discovery denied | Supply the known home region with `--region`. |
 | Home-region error | Verify the selected region and Cloud Shell network access. |
 | Missing command / authorization | Check OCI CLI support and read permissions. |
-| Missing forecast / overage | Check request errors and coverage. Missing forecast days are zero-filled and counted; reported balances and overage remain unavailable when absent. |
+| Missing forecast / overage | Check request errors and coverage. Averages use reported days only; 0/N coverage is unavailable. Reported balances and overage remain unavailable when absent. |
 
 Failures do not stop other subscriptions. Exit code `1` means a request error/partial failure; `0` means requests succeeded, not that billing data is complete.
 
@@ -157,4 +154,4 @@ The suite includes seven end-to-end scenarios using a temporary fake OCI CLI: ov
 
 See [overage test report](overage-test-report.md), [full overage output](examples/sample-output-overage.txt) and [exhausted-credit output](examples/sample-output-exhausted.txt).
 
-Version **2.4** · ahmet.bakkal@oracle.com
+Version **2.5** · ahmet.bakkal@oracle.com

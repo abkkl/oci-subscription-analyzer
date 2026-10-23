@@ -38,7 +38,7 @@ class LayoutAndMetadataTests(unittest.TestCase):
                 self.assertIn("\nBaseline\n", text)
                 self.assertNotIn("mBaseline", text)
                 self.assertIn("2026-07-25 - 2026-10-22\n\nMonthly calculation:", text)
-                self.assertIn("\033[1;34mConsumption trend:\033[0m 7-day average", text)
+                self.assertIn("\033[1;36mConsumption trend:\033[0m 7-day average", text)
 
     def test_mixed_forecast_has_both_overage_and_unused_colors(self):
         from test_overage import fixture, REFERENCE
@@ -340,7 +340,7 @@ class ForecastTests(unittest.TestCase):
         self.assertEqual(str(month["first"]), "2026-09-23")
         self.assertEqual(str(previous["last"]), "2026-10-22")
 
-    def test_missing_older_day_is_zero_filled_in_ninety_day_baseline_and_trend(self):
+    def test_missing_older_day_is_excluded_from_ninety_day_average(self):
         daily = dict(self.daily)
         del daily[(self.now - timedelta(days=60)).date()]
         output = io.StringIO()
@@ -348,7 +348,8 @@ class ForecastTests(unittest.TestCase):
             report.render_recent_forecast(self.record, "EUR", self.now, [], daily_override=daily)
         self.assertIn("89/90", output.getvalue())
         self.assertIn("Consumption trend: 7-day average", output.getvalue())
-        self.assertIn("Last 90 days: 1 day", output.getvalue())
+        self.assertNotIn("Missing daily records", output.getvalue())
+        self.assertEqual(report.forecast_rows(self.record, daily, self.now)[0]["rate"], Decimal(1040) / Decimal(89))
         outcome = next(line for line in output.getvalue().splitlines() if line.startswith("Forecast outcome"))
         self.assertEqual([cell.strip() for cell in outcome.split("|")[1:]],
                          ["Unused estimate"] * 4)
@@ -356,7 +357,7 @@ class ForecastTests(unittest.TestCase):
     def test_young_service_does_not_use_costs_before_its_start_for_ninety_days(self):
         record = dict(self.record, **{"time-start": "2026-09-01T00:00:00Z"})
         quarter, month, week, previous = report.forecast_rows(record, self.daily, self.now)
-        self.assertEqual(quarter["rate"], Decimal(670) / Decimal(90))
+        self.assertEqual(quarter["rate"], Decimal(670) / Decimal(52))
         self.assertEqual(quarter["reason"], None)
         self.assertEqual(quarter["missing"], 38)
         self.assertTrue(all(row["reason"] is None for row in (month, week, previous)))
@@ -389,33 +390,33 @@ class ForecastTests(unittest.TestCase):
         self.assertEqual([c.strip() for c in block[-1].split("|")][1:], ["Unused estimate"] * 4)
         self.assertTrue(all(len(line) <= 110 for line in block))
 
-    def test_missing_previous_day_is_zero_consumption(self):
+    def test_missing_previous_day_is_unavailable(self):
         del self.daily[(self.now - timedelta(days=1)).date()]
         rows = report.forecast_rows(self.record, self.daily, self.now)
-        self.assertTrue(all(r["reason"] is None for r in rows))
+        self.assertTrue(all(r["reason"] is None for r in rows[:-1]))
         self.assertEqual(rows[-1]["coverage"], "0/1")
-        self.assertEqual(rows[-1]["rate"], 0)
-        self.assertEqual(rows[-1]["unused"], Decimal(10000))
+        self.assertIsNone(rows[-1]["rate"])
+        self.assertIsNone(rows[-1]["unused"])
         self.assertEqual(rows[-1]["missing"], 1)
 
-    def test_twenty_six_missing_days_are_counted_and_zero_filled(self):
+    def test_sixty_four_records_use_sixty_four_as_denominator(self):
         daily = {(self.now - timedelta(days=i)).date(): Decimal(10) for i in range(1, 65)}
         output = io.StringIO()
         with contextlib.redirect_stdout(output):
             report.render_recent_forecast(self.record, "EUR", self.now, [], daily_override=daily)
         self.assertIn("64/90", output.getvalue())
-        self.assertIn("Last 90 days: 26 days", output.getvalue())
-        self.assertIn("\n\nMissing daily records treated as zero:", output.getvalue())
+        self.assertNotIn("Missing daily records", output.getvalue())
+        self.assertNotIn("zero-filled", output.getvalue())
         quarter = report.forecast_rows(self.record, daily, self.now)[0]
-        self.assertEqual(quarter["rate"], Decimal(640) / Decimal(90))
+        self.assertEqual(quarter["rate"], Decimal(10))
         self.assertEqual(quarter["missing"], 26)
 
-    def test_empty_success_is_zero_but_request_error_or_malformed_usage_is_not(self):
+    def test_empty_response_request_error_and_malformed_usage_are_unavailable(self):
         output = io.StringIO()
         with contextlib.redirect_stdout(output):
             report.render_recent_forecast(self.record, "EUR", self.now, [])
-        self.assertIn("Unused estimate", output.getvalue())
-        self.assertIn("Last 90 days: 90 days", output.getvalue())
+        self.assertIn("Forecast unavailable", output.getvalue())
+        self.assertNotIn("Metric (EUR)", output.getvalue())
         for groups, error in [([], "API denied"),
                               ([{"parent-subscribed-service-id": self.record["id"], "currency-code": "EUR",
                                  "aggregated-computed-usages": [{"time-metered-on": "invalid", "cost-unrounded": "10"}]}], None)]:
@@ -468,7 +469,8 @@ class ForecastTests(unittest.TestCase):
         self.assertNotIn("Last completed calendar day", output.getvalue())
         self.assertIn("Latest reported completed usage day (UTC): 2026-10-21", output.getvalue())
         self.assertIn("Baseline", output.getvalue())
-        self.assertIn("Previous day: 1 day", output.getvalue())
+        self.assertIn("0/1", output.getvalue())
+        self.assertNotIn("Missing daily records", output.getvalue())
 
     def test_commitment_horizon_does_not_use_contract_end(self):
         service_record = dict(self.record, **{"commitment-services": [

@@ -1,4 +1,4 @@
-# Overage validation — version 2.4
+# Overage validation — version 2.5
 
 55 tests passed: 48 regression checks and 7 end-to-end scenarios. All data is synthetic. The temporary fake OCI CLI supplies responses to the real report subprocess; no live tenancy or credentials are used.
 
@@ -30,7 +30,7 @@ Reference: 2026-10-23 00:00:00 UTC. Active commitment horizon: 2026-11-02 00:00:
 | Exact credit exhaustion | 2,000 credit and 2,000 future consumption: zero difference; Balanced estimate. |
 | Exhausted credit, existing overage | Remaining credit 0; reported overage 100 stays in balances; future overage is 2,000, not 2,100. |
 | Zero consumption | Future consumption 0; all 1,000 credit remains unused. |
-| Missing previous day | Zero-filled rate for yesterday; coverage 0/1, 6/7, 29/30, 89/90; each window reports one missing day. Other baselines still calculate. |
+| Missing previous day | Yesterday is N/A (0/1); other baselines use reported dates (6/7, 29/30, 89/90), retaining the reported average of 200/day. |
 
 Regression checks also cover fractional horizons, monthly conversion, service/currency isolation, pagination, history, reported/derived consumption, ANSI alignment and subscription headings matching the 7-day outcome, cyan baseline labels, uncolored Baseline heading and blank-line spacing.
 
@@ -45,6 +45,6 @@ Full captured reports: [overage](examples/sample-output-overage.txt), [mixed](ex
 
 This validates the implementation against controlled API responses. Live API availability, permissions, retention and charge completeness still require confirmation in the target tenancy.
 
-90-day checks also confirm the exact 2026-07-25 → 2026-10-22 window, 90/90 coverage, a 7-vs-90 trend, zero-filling of an older missing day, zero-filled pre-service dates, and dynamic per-baseline missing-day counts. Additional checks cover 64/90 records, aligned labels/dates, blue prefix only, and preserving unavailable results on API errors or malformed records.
+90-day checks also confirm the exact 2026-07-25 → 2026-10-22 window and a 7-vs-90 trend. Missing dates and dates before service start are excluded from the denominator. An explicit zero-cost record still counts; no reported dates means N/A. Additional checks cover aligned labels/dates, a cyan trend prefix only, and unavailable results on API errors or malformed records.
 
-The [missing-days report](examples/sample-output-missing-days.txt) shows 26 absent dates in the 90-day window. Zero-filling is intentional and affects averages; coverage is not rewritten to 90/90.
+The [missing-days report](examples/sample-output-missing-days.txt) has 64 records at EUR 200/day: the average is 12,800 / 64 = 200, not 142.2. Coverage stays 64/90. No extra missing-record note is printed.

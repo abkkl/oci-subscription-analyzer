@@ -427,9 +427,11 @@ def forecast_rows(record, daily, as_of, history_start=None):
         covered = len(reported)
         reason = horizon_error
         total = sum((daily[day] for day in reported), Decimal(0))
+        if covered == 0 and reason is None:
+            reason = "No reported daily usage records"
         if total < 0:
             reason = "Negative net consumption"
-        rate = total / Decimal(days) if total >= 0 else None
+        rate = total / Decimal(covered) if covered > 0 and total >= 0 else None
         unused = beyond = extra = None
         if reason is None:
             remaining_days = Decimal(str((end - as_of).total_seconds())) / Decimal(86400)
@@ -542,12 +544,8 @@ def render_recent_forecast(service, currency, as_of, groups, usage_error=None, d
     for reason, labels in reasons.items():
         print(textwrap.fill(f"N/A ({', '.join(labels)}): {reason}", width=78))
     print()
-    print("Missing daily records treated as zero: " + " | ".join(
-        f"{row['label']}: {row['missing']} {'day' if row['missing'] == 1 else 'days'}" for row in scenarios) + ".")
-    print("Averages use the full baseline window; dates before service start are also zero-filled.")
-    print()
     trend = consumption_trend(rows, currency)
-    print(styled("Consumption trend:", "34") + trend[len("Consumption trend:"):])
+    print(styled("Consumption trend:", "36") + trend[len("Consumption trend:"):])
     print()
     print("Estimate = remaining credit - future consumption, minimum zero.")
     print("Reported usage may still be delayed or revised.")
@@ -712,7 +710,7 @@ def main(argv=None):
         return 1
     heading(f"OCI SUBSCRIPTION AND BALANCE REPORT ({tenancy_name(tenancy, args.region)})")
     print()
-    print("Report version: 2.4 | ahmet.bakkal@oracle.com")
+    print("Report version: 2.5 | ahmet.bakkal@oracle.com")
     print("Region note: Run Cloud Shell in the tenancy home region.")
     try:
         CLI_REGION = args.region or home_region(tenancy)

@@ -170,13 +170,13 @@ class OverageEndToEndTests(unittest.TestCase):
         self.assertEqual(cells["Unused/Overage Credit - Total"], ["1,000.0"] * 4)
         self.assertEqual(cells["Forecast outcome"], ["Unused estimate"] * 4)
 
-    def test_missing_day_is_zero_filled_with_explicit_counts(self):
+    def test_missing_day_is_excluded_from_average_denominators(self):
         output, cells = self.check_run(fixture(missing_day=True))
         self.assertEqual(cells["Coverage"], ["0/1", "6/7", "29/30", "89/90"])
-        self.assertEqual(cells["Forecasted Consumption - Daily"], ["0.0", "171.4", "193.3", "197.8"])
-        self.assertEqual(cells["Forecast outcome"], ["Unused estimate", "Overage estimate", "Overage estimate", "Overage estimate"])
-        self.assertIn("Previous day: 1 day | Last 7 days: 1 day | Last 30 days: 1 day | Last 90 days: 1 day", output)
-        self.assertIn("\n\nMissing daily records treated as zero:", output)
+        self.assertEqual(cells["Forecasted Consumption - Daily"], ["—", "200.0", "200.0", "200.0"])
+        self.assertEqual(cells["Forecast outcome"], ["N/A", "Overage estimate", "Overage estimate", "Overage estimate"])
+        self.assertNotIn("Missing daily records", output)
+        self.assertNotIn("zero-filled", output)
 
 
 if __name__ == "__main__":
