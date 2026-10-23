@@ -8,17 +8,62 @@ import sys
 import re
 import textwrap
 import calendar
+import threading
+import time
+import shutil
+from contextlib import contextmanager, nullcontext
 from decimal import Decimal, InvalidOperation
 from datetime import datetime, timedelta, timezone
 
 CLI_REGION = None
 
 
+@contextmanager
+def loading(stage):
+    """Animate only interactive terminals, leaving saved reports clean."""
+    if not sys.stdout.isatty() or os.environ.get("TERM") == "dumb":
+        yield
+        return
+    stopped = threading.Event()
+    started = time.monotonic()
+    stream = sys.stdout
+    color = "NO_COLOR" not in os.environ
+    def animate():
+        frames = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
+        index = 0
+        while not stopped.is_set():
+            elapsed = int(time.monotonic() - started)
+            line = f"{frames[index % len(frames)]} Loading · {stage} · {elapsed}s"
+            line = line[:max(1, shutil.get_terminal_size((80, 24)).columns - 1)]
+            decorated = f"\033[1;36m{line}\033[0m" if color else line
+            stream.write("\r\033[2K" + decorated)
+            stream.flush()
+            index += 1
+            stopped.wait(0.08)
+    worker = threading.Thread(target=animate, daemon=True)
+    worker.start()
+    try:
+        yield
+    finally:
+        stopped.set()
+        worker.join()
+        stream.write("\r\033[2K")
+        stream.flush()
+
+
 def cli_payload(*args):
     region_args = ["--region", CLI_REGION] if CLI_REGION else []
-    result = subprocess.run(
-        ["oci", *region_args, *args, "--output", "json"], capture_output=True, text=True
-    )
+    stage = ("Cost analysis" if "usage-api" in args else
+             "Consumption & overage" if "computed-usage" in args else
+             "Discovering subscriptions" if "organization-subscription" in args else
+             "Subscription balances")
+    if "--subscription-id" in args:
+        stage += f" · {args[args.index('--subscription-id') + 1]}"
+    # Home-region discovery precedes the animated loading stages.
+    with loading(stage) if CLI_REGION else nullcontext():
+        result = subprocess.run(
+            ["oci", *region_args, *args, "--output", "json"], capture_output=True, text=True
+        )
     if result.returncode:
         raise RuntimeError(result.stderr.strip() or "OCI CLI call failed.")
     try:
