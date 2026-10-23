@@ -21,12 +21,12 @@ CLI_REGION = None
 @contextmanager
 def loading(stage):
     """Animate only interactive terminals, leaving saved reports clean."""
-    if not sys.stdout.isatty() or os.environ.get("TERM") == "dumb":
+    stream = sys.stdout if sys.stdout.isatty() else sys.stderr
+    if not stream.isatty() or os.environ.get("TERM") == "dumb":
         yield
         return
     stopped = threading.Event()
     started = time.monotonic()
-    stream = sys.stdout
     color = "NO_COLOR" not in os.environ
     def animate():
         frames = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
@@ -496,7 +496,7 @@ def main(argv=None):
         print("ERROR: OCI_TENANCY is missing. Run this script in OCI Cloud Shell.", file=sys.stderr)
         return 1
     print("OCI SUBSCRIPTION AND BALANCE REPORT")
-    print("Report version: 1.5 | Consolidated balances, overage and forecasts")
+    print("Report version: 1.6 | Animated loading, balances and forecasts")
     print("Region note: Run Cloud Shell in the tenancy home region.")
     try:
         CLI_REGION = home_region(tenancy)

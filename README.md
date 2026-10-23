@@ -152,7 +152,7 @@ If the service has not existed for the full window, or net consumption is negati
 
 ### Confirm which version is running
 
-This revision prints `Report version: 1.5` near the top. If you see three separate forecast tables or a separate empty zero-credit service section, you are running an earlier version. Until you publish your updated files to GitHub, downloading from the repository's `main` URL will continue to fetch the previously published version. Upload the revised `oci_balance.py` to Cloud Shell and run `python3 ~/oci_balance.py` to test it first.
+This revision prints `Report version: 1.6` near the top. If you see three separate forecast tables or a separate empty zero-credit service section, you are running an earlier version. Until you publish your updated files to GitHub, downloading from the repository's `main` URL will continue to fetch the previously published version. Upload the revised `oci_balance.py` to Cloud Shell and run `python3 ~/oci_balance.py` to test it first.
 
 For a reproducible reference date:
 
@@ -226,3 +226,5 @@ When all three forecast scenarios are unavailable, the report prints only `Forec
 ### Loading indicator
 
 After the home region is shown, interactive terminals display a cyan animated spinner with the current API stage, subscription identifier where applicable, and elapsed seconds per request. It clears when the request completes, including on errors. Output redirected to files or pipes and TERM=dumb omit the animation; NO_COLOR disables its color.
+
+Version 1.6 includes animated loading. The indicator uses stdout when it is a terminal, otherwise stderr if that is a terminal. If both streams are redirected or TERM=dumb, animation is suppressed. Verify the report starts with `Report version: 1.6 | Animated loading, balances and forecasts` after replacing the script.
