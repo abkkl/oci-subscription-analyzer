@@ -15,6 +15,63 @@ def service(sku, **values):
 
 
 class ReportTests(unittest.TestCase):
+    def test_commitment_consumption_distinguishes_reported_and_derived_values(self):
+        now = datetime(2026, 10, 23, tzinfo=timezone.utc)
+        commitment = {"time-start": "2026-01-01T00:00:00Z", "time-end": "2026-12-31T23:59:59Z",
+                      "line-net-amount": "90000", "available-amount": "34567.89"}
+        self.assertEqual(report.commitment_consumed(commitment, now), "55,432.1*")
+        self.assertEqual(report.commitment_consumed(dict(commitment, **{"used-amount": "50000"}), now), "50,000.0")
+        expired = dict(commitment, **{"time-end": "2026-01-01T00:00:00Z", "available-amount": "0"})
+        self.assertEqual(report.commitment_consumed(expired, now), "—")
+        future = dict(commitment, **{"time-start": "2026-12-01T00:00:00Z"})
+        self.assertEqual(report.commitment_consumed(future, now), "—")
+        self.assertEqual(report.commitment_consumed(dict(commitment, **{"line-net-amount": None}), now), "—")
+        self.assertEqual(report.commitment_consumed(dict(commitment, **{"available-amount": "1000000"}), now), "—")
+        self.assertEqual(report.commitment_consumed(dict(commitment, **{"funded-allocation-value": "500"}), now), "—")
+
+    def test_history_is_summarized_by_default_and_can_be_expanded(self):
+        now = datetime(2026, 10, 23, tzinfo=timezone.utc)
+        past = service("PAST", id="past", status="EXPIRED", **{
+            "time-start": "2025-01-01T00:00:00Z", "time-end": "2025-12-31T23:59:59Z",
+            "used-amount": "500", "available-amount": "0", "commitment-services": [
+                {"time-start": "2025-01-01T00:00:00Z", "time-end": "2025-12-31T23:59:59Z", "quantity": "500"}]})
+        summary = {"currency": {"iso-code": "TRY"}, "subscribed-services": [past]}
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            report.render("example", [summary], now)
+        self.assertIn("HISTORY SUMMARY (TRY)", output.getvalue())
+        self.assertIn("PAST", output.getvalue())
+        self.assertNotIn("Commitment periods", output.getvalue())
+        self.assertNotIn("Forecast unavailable", output.getvalue())
+        expanded = io.StringIO()
+        with contextlib.redirect_stdout(expanded):
+            report.render("example", [summary], now, include_history=True)
+        self.assertNotIn("HISTORY SUMMARY", expanded.getvalue())
+        self.assertIn("Commitment periods: 1", expanded.getvalue())
+        self.assertIn("Forecast unavailable", expanded.getvalue())
+
+    def test_overage_audit_exposes_incomplete_historical_date_coverage(self):
+        now = datetime(2026, 10, 23, tzinfo=timezone.utc)
+        record = {"id": "old", "time-start": "2025-01-01T00:00:00Z", "time-end": "2025-12-31T23:59:59Z"}
+        groups = [{"parent-subscribed-service-id": "old", "currency-code": "TRY",
+                   "aggregated-computed-usages": [{"type": "OVERAGE", "cost-unrounded": "4.69",
+                                                    "time-metered-on": "2025-12-03T00:00:00Z"}]}]
+        audit = report.overage_audit(record, "TRY", groups, now)
+        self.assertEqual(audit["amount"], Decimal("4.69"))
+        self.assertEqual(audit["expected_days"], 365)
+        self.assertEqual(audit["days"], 1)
+        self.assertEqual(audit["first"], "2025-12-03")
+        self.assertEqual(audit["overage_rows"], 1)
+        self.assertIsNone(report.overage_audit(record, "TRY", [], now)["amount"])
+
+    def test_one_decimal_formatting_does_not_change_forecast_precision(self):
+        self.assertEqual(report.number("1234.56789"), "1,234.6")
+        self.assertEqual(report.number("0"), "0.0")
+        now = datetime(2026, 10, 23, tzinfo=timezone.utc)
+        record = {"time-start": "2026-01-01T00:00:00Z", "time-end": "2026-10-24T00:00:00Z", "available-amount": "1.23456"}
+        daily = {(now - timedelta(days=i)).date(): Decimal("0.12345") for i in range(1, 31)}
+        self.assertEqual(report.forecast_rows(record, daily, now)[0]["unused"], Decimal("1.11111"))
+
     def test_actual_overage_uses_only_explicit_matching_records(self):
         now = datetime(2026, 10, 23, tzinfo=timezone.utc)
         record = {"id": "svc", "time-start": "2026-08-01T00:00:00Z"}
@@ -27,7 +84,7 @@ class ReportTests(unittest.TestCase):
                       row("USAGE", "900"), row("OVERAGE", "700", "2026-10-24T00:00:00Z")]),
                   group("other", "TRY", [row("OVERAGE", "400")]),
                   group("svc", "EUR", [row("OVERAGE", "600")])]
-        self.assertEqual(report.actual_overage(record, "TRY", groups, now), Decimal("23.50"))
+        self.assertEqual(report.actual_overage(record, "TRY", groups, now), Decimal("23.5"))
         self.assertIsNone(report.actual_overage(record, "TRY", [], now))
         self.assertEqual(report.actual_overage(record, "TRY", [group("svc", "TRY", [row("USAGE", "10")])], now), 0)
         self.assertIsNone(report.actual_overage(record, "TRY", [group("svc", "TRY", [row(None, "10")])], now))
@@ -74,12 +131,12 @@ class ReportTests(unittest.TestCase):
         with contextlib.redirect_stdout(output):
             report.render("example-poc", [summary])
         text = output.getvalue()
-        self.assertIn("10,000.00", text)
-        self.assertIn("8,750.00", text)
-        self.assertIn("1,250.00", text)
+        self.assertIn("10,000.0", text)
+        self.assertIn("8,750.0", text)
+        self.assertIn("1,250.0", text)
         self.assertIn("B89010", text)
         self.assertIn("B88206", text)
-        self.assertIn("0.00", text)
+        self.assertIn("0.0", text)
         self.assertEqual(report.number("null"), "—")
         self.assertEqual(report.number(None), "—")
 
@@ -97,7 +154,7 @@ class ReportTests(unittest.TestCase):
         self.assertIn("Commitment periods: 2", text)
         self.assertIn("2026-01-01", text)
         self.assertIn("2026-07-01", text)
-        self.assertIn("4,500.00", text)
+        self.assertIn("4,500.0", text)
 
     def test_subscription_failure_is_reported_without_stopping_other_subscriptions(self):
         def fake_cli(*args):
@@ -119,6 +176,25 @@ class ReportTests(unittest.TestCase):
         self.assertIn("SUBSCRIPTION allowed", output.getvalue())
         self.assertIn("Successful: 1 | Failed: 1", output.getvalue())
         self.assertIn("ERROR [denied]", errors.getvalue())
+
+    def test_explicit_region_skips_discovery_and_history_flag_reaches_renderer(self):
+        calls = []
+        def fake_cli(*args):
+            calls.append(args)
+            if "organization-subscription" in args:
+                return [{"id": "example"}]
+            if "subscription" in args:
+                return [{"currency": {"iso-code": "TRY"}, "subscribed-services": []}]
+            return []
+        with patch.dict(os.environ, {"OCI_TENANCY": "example-tenancy"}), \
+                patch.object(report, "home_region") as discover, \
+                patch.object(report, "cli", side_effect=fake_cli), \
+                patch.object(report, "render") as render, contextlib.redirect_stdout(io.StringIO()):
+            result = report.main(["--region", "eu-frankfurt-1", "--include-history"])
+        self.assertEqual(result, 0)
+        discover.assert_not_called()
+        self.assertEqual(report.CLI_REGION, "eu-frankfurt-1")
+        self.assertTrue(render.call_args[0][-1])
 
 
 class ForecastTests(unittest.TestCase):
@@ -188,9 +264,37 @@ class ForecastTests(unittest.TestCase):
             report.render_recent_forecast(service_record, "EUR", self.now, [], daily_override=self.daily)
         self.assertIn("FORECAST (EUR) | Horizon: Active commitment end - 2026-11-01", output.getvalue())
         self.assertIn("Overage Credit at End", output.getvalue())
-        self.assertIn("Contract days left", output.getvalue())
+        self.assertIn("Days to horizon", output.getvalue())
         forecast_lines = [line for line in output.getvalue().splitlines() if line.startswith("Last 30 days")]
-        self.assertEqual(forecast_lines[0].split("|")[-3].strip(), "10")
+        self.assertEqual(forecast_lines[0].split("|")[-3].strip(), "9.0")
+
+    def test_daily_values_share_the_fractional_commitment_horizon(self):
+        record = dict(self.record, **{"time-end": "2028-11-03T23:59:59Z", "commitment-services": [
+            {"time-start": "2026-01-01T00:00:00Z", "time-end": "2026-10-24T00:00:00Z", "available-amount": "100"}]})
+        now = self.now.replace(hour=12)
+        daily = {day: Decimal(10) for day in self.daily}
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            report.render_recent_forecast(record, "TRY", now, [], daily_override=daily)
+        lines = output.getvalue().splitlines()
+        headers = [cell.strip() for cell in next(line for line in lines if line.startswith("Baseline")).split("|")]
+        values = [cell.strip() for cell in next(line for line in lines if line.startswith("Last 30 days")).split("|")]
+        cells = dict(zip(headers, values))
+        self.assertEqual(cells["Days to horizon"], "0.5")
+        self.assertEqual(cells["Required/day Consumption"], "200.0")
+        self.assertEqual(cells["Future Consumption"], "5.0")
+        self.assertEqual(cells["Unused Credit at End - Total"], "95.0")
+        self.assertEqual(cells["Unused Credit at End - Daily"], "190.0")
+        self.assertNotIn("Contract days left", output.getvalue())
+
+    def test_trend_comment_handles_increase_decrease_zero_and_missing_data(self):
+        def comment(month, week):
+            return report.consumption_trend([{"rate": month}, {"rate": week}], "EUR")
+        self.assertIn("200.0% higher; 3.0x", comment(Decimal(10), Decimal(30)))
+        self.assertIn("50.0% lower", comment(Decimal(20), Decimal(10)))
+        self.assertIn("unchanged", comment(Decimal(10), Decimal(10)))
+        self.assertIn("no consumption", comment(Decimal(0), Decimal(0)))
+        self.assertIn("unavailable", comment(None, Decimal(10)))
 
     def test_inactive_service_shows_only_unavailable_note(self):
         output = io.StringIO()
@@ -231,7 +335,7 @@ class ForecastTests(unittest.TestCase):
         self.assertIn("2026-09-01T00:00:00+00:00", usage_call)
         self.assertIn("2026-10-23T00:00:00+00:00", usage_call)
         self.assertEqual(code, 1)
-        self.assertIn("10,000.00", output.getvalue())
+        self.assertIn("10,000.0", output.getvalue())
         self.assertIn("BALANCES (TRY)", output.getvalue())
         self.assertIn("Remaining", output.getvalue())
         self.assertIn("Usage request failed", output.getvalue())
@@ -270,7 +374,7 @@ class CostAnalysisTests(unittest.TestCase):
         with contextlib.redirect_stdout(out):
             report.render("example", self.summaries(), self.now, cost_usage=self.costs())
         text = out.getvalue()
-        self.assertIn("8,900.00", text)
+        self.assertIn("8,900.0", text)
         self.assertIn("30/30", text)
         self.assertIn("Latest reported completed usage day (UTC): 2026-10-22", text)
         self.assertNotIn("Source:", text)
@@ -285,10 +389,10 @@ class CostAnalysisTests(unittest.TestCase):
         headers = next(line for line in text.splitlines() if line.startswith("Baseline"))
         values = next(line for line in text.splitlines() if line.startswith("Last 30 days"))
         cells = dict(zip([c.strip() for c in headers.split("|")], [c.strip() for c in values.split("|")]))
-        self.assertEqual(cells["Future Consumption"], "100.00")
-        self.assertEqual(cells["Remaining Credit"], "9,000.00")
-        self.assertEqual(cells["Unused Credit at End - Total"], "8,900.00")
-        self.assertEqual(cells["Unused Credit at End - Daily"], "890.00")
+        self.assertEqual(cells["Future Consumption"], "100.0")
+        self.assertEqual(cells["Remaining Credit"], "9,000.0")
+        self.assertEqual(cells["Unused Credit at End - Total"], "8,900.0")
+        self.assertEqual(cells["Unused Credit at End - Daily"], "890.0")
         self.assertNotIn("SERVICE 2", text)
         self.assertIn("STANDARD — Example credits omitted", text)
 

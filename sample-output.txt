@@ -1,40 +1,63 @@
+OCI SUBSCRIPTION AND BALANCE REPORT
+Report version: 1.7 | ahmet.bakkal@oracle.com
 
 ==============================================================================
-SUBSCRIPTION example | ACTIVE | TRY
+SUBSCRIPTION example-active | ACTIVE | TRY
 ==============================================================================
-Contract end (UTC): 2026-11-02 | 0 months 10 days remaining (10 days total)
+Contract end (UTC): 2028-11-03 | 24 months 11 days remaining (742 days total)
 End date based on reported service contract dates.
 
-Note: STANDARD — Example credits omitted: zero reported credit and consumption
-(including commitment amounts).
-
 ──────────────────────────────────────────────────────────────────────────────
-SERVICE 1 | PROMO
-Example credits
+SERVICE 1 | B88206
+Oracle PaaS and IaaS Universal Credits
 ──────────────────────────────────────────────────────────────────────────────
 Status: ACTIVE
-Program: — | Model: —
-Period (UTC): 2026-08-01 → 2026-11-02
-Contract end (UTC): 2026-11-02 | 0 months 10 days remaining (10 days total)
+Program: — | Model: Annual
+Period (UTC): 2025-11-04 → 2028-11-03
+Contract end (UTC): 2028-11-03 | 24 months 11 days remaining (742 days total)
 
 BALANCES (TRY)
-Promo credit | Service total | Funded | Consumed | Remaining | Overage
--------------+---------------+--------+----------+-----------+--------
-   10,000.00 |             — |      — |        — |  9,000.00 |    0.00
+Promo credit | Service total | Funded | Consumed | Remaining | Overage (records)
+-------------+---------------+--------+----------+-----------+------------------
+           — |     270,000.0 |      — | 60,000.0 | 210,000.0 |               0.0
+Overage audit (UTC): 2026-09-23 - 2026-10-22 | Usage dates returned: 30/354 | OVERAGE records: 0.
+Amounts cover returned records only; full contract coverage is unverified.
 
-Commitment periods: 0
+Commitment periods: 3
+Start UTC  | End UTC    | Quantity | Net amount | Funded | Consumed  | Remaining
+-----------+------------+----------+------------+--------+-----------+----------
+2025-11-04 | 2026-11-03 | 90,000.0 |   90,000.0 |      — | 60,000.0* |  30,000.0
+2026-11-04 | 2027-11-03 | 90,000.0 |   90,000.0 |      — |         — |  90,000.0
+2027-11-04 | 2028-11-03 | 90,000.0 |   90,000.0 |      — |         — |  90,000.0
+* Balance-based estimate: net amount minus remaining; may include adjustments.
 
-FORECAST (TRY) | Horizon: Service contract end - 2026-11-02
+FORECAST (TRY) | Horizon: Active commitment end - 2026-11-03
 
-Balance snapshot UTC: 2026-10-23 00:00:00
+Balance snapshot UTC: 2026-10-23 12:00:00
 Latest reported completed usage day (UTC): 2026-10-22
+Future renewals and credit rollover are not forecast.
 
-Baseline                               | Avg/day Consumption | Remaining Credit | Future Consumption | Unused Credit at End - Total | Unused Credit at End - Daily | Overage Credit at End | Contract days left | Coverage | Result
----------------------------------------+---------------------+------------------+--------------------+------------------------------+------------------------------+-----------------------+--------------------+----------+---------
-Last 30 days (2026-09-23 - 2026-10-22) |               10.00 |         9,000.00 |             100.00 |                     8,900.00 |                       890.00 |                  0.00 | 10                 | 30/30    | Estimate
-Last 7 days (2026-10-16 - 2026-10-22)  |               10.00 |         9,000.00 |             100.00 |                     8,900.00 |                       890.00 |                  0.00 | 10                 | 7/7      | Estimate
-Previous day (2026-10-22 - 2026-10-22) |               10.00 |         9,000.00 |             100.00 |                     8,900.00 |                       890.00 |                  0.00 | 10                 | 1/1      | Estimate
+Baseline                               | Avg/day Consumption | Required/day Consumption | Remaining Credit | Future Consumption | Unused Credit at End - Total | Unused Credit at End - Daily | Overage Credit at End | Days to horizon | Coverage | Result
+---------------------------------------+---------------------+--------------------------+------------------+--------------------+------------------------------+------------------------------+-----------------------+-----------------+----------+---------
+Last 30 days (2026-09-23 - 2026-10-22) |               470.0 |                  2,608.7 |         30,000.0 |            5,405.0 |                     24,595.0 |                      2,138.7 |                   0.0 |            11.5 | 30/30    | Estimate
+Last 7 days (2026-10-16 - 2026-10-22)  |             1,028.6 |                  2,608.7 |         30,000.0 |           11,828.6 |                     18,171.4 |                      1,580.1 |                   0.0 |            11.5 | 7/7      | Estimate
+Previous day (2026-10-22 - 2026-10-22) |             1,200.0 |                  2,608.7 |         30,000.0 |           13,800.0 |                     16,200.0 |                      1,408.7 |                   0.0 |            11.5 | 1/1      | Estimate
 
+Comment: Consumption trend: 7-day average 1,028.6 vs 30-day average 470.0 TRY/day (118.8% higher;
+2.2x the 30-day average).
 Estimate = remaining credit - future consumption, minimum zero.
 Missing days are not treated as zero.
 Reported usage may still be delayed or revised.
+
+==============================================================================
+SUBSCRIPTION example-history | ACTIVE | TRY
+==============================================================================
+Contract end (UTC): 2025-11-03 | Expired
+End date based on reported service contract dates.
+
+HISTORY SUMMARY (TRY) | 1 past services
+SKU    | Status  | Start UTC  | End UTC    | Consumed | Remaining | Overage (records) | Usage dates UTC
+-------+---------+------------+------------+----------+-----------+-------------------+------------------------
+B88206 | EXPIRED | 2024-11-04 | 2025-11-03 | 95,000.0 |       0.0 |              25.0 | 2025-11-03 - 2025-11-03
+Overage covers returned records only; full historical coverage is unverified.
+Use --include-history for past service and commitment details.
