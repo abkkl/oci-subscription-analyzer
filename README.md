@@ -28,12 +28,14 @@ No password, API key setup, Python packages, or `config.ini` file is required in
 - Promotional credit, service total value, funded allocation, consumption, and available balance as separate fields.
 - Every returned commitment period, including its quantity, net amount, funded allocation, consumption, and available balance.
 - English labels and two-decimal amounts, for example `8,750.00`. Dates are displayed in UTC as `YYYY-MM-DD`.
+- Three unused-credit forecasts based on the last 30 complete days, last 7 complete days, and the previous complete day's consumption.
+- The last completed UTC calendar date and the latest completed usage date actually returned by OCI, shown separately.
 
 The same report handles PoC and production records. The fields populated by OCI depend on the subscription and service type; successful execution does not imply that every billing field will be populated.
 
 ## Example output
 
-The following data is fictional:
+The following balance excerpt uses fictional data:
 
 ```text
 OCI SUBSCRIPTION AND BALANCE REPORT
@@ -83,12 +85,65 @@ Start UTC  | End UTC    | Quantity  | Net amount | Funded | Consumed | Remaining
 
 Service amounts and commitment-period amounts may describe overlapping balances, so the report does **not** add them together. It also does not sum currencies or infer a monetary balance from a commitment's quantity. All amounts come from the API; there is no fallback estimate based on Cost Analysis.
 
+## Consumption forecasts
+
+For each service, the report requests daily aggregated computed usage for the previous 30 complete UTC days. It matches the exact parent subscribed service ID and currency, then sums the API's `cost-unrounded` values per metered day. It does not substitute another SKU's consumption or a tenancy-wide Cost Analysis total.
+
+The report shows three independent scenarios:
+
+| Baseline | Daily rate |
+| --- | --- |
+| Last 30 days | Reported net consumption over the last 30 complete UTC days divided by 30. |
+| Last 7 days | Reported net consumption over the last 7 complete UTC days divided by 7. |
+| Previous day | Reported net consumption on the previous complete UTC day. |
+
+"One month" means a rolling 30-day window, not the previous calendar month. The current incomplete day is excluded from all three baselines. For a run on October 23, the last completed calendar day is October 22 (UTC).
+
+Each scenario projects:
+
+```text
+Additional consumption = daily rate × fractional days until the forecast horizon
+Unused credit at end   = max(0, current reported remaining balance − additional consumption)
+Beyond credit          = max(0, additional consumption − current reported remaining balance)
+```
+
+`Beyond credit` is an estimate of consumption exceeding the credit, not a prediction of an invoice or confirmation that the account can continue running after credits are exhausted. The model assumes a constant daily rate, with no new credits or changes to pricing, workload, allocation, or expiry terms. Forecasts are estimates and are printed separately from reported balances.
+
+### Forecast horizon
+
+- For services without commitment periods, the horizon is the service's reported end date, using its reported available balance.
+- For services with commitment periods, the horizon is the **one currently active commitment period's end date**, using that period's available balance. Recent consumption from the same service can span earlier commitment periods. The report does not assume monthly credit rolls over, forecast future renewals, or add future commitments to the current balance.
+- If there is no unique active commitment, no finite end date, or no valid available balance, the report leaves the projected amount unavailable. Non-active services are also not forecast.
+
+The output labels the horizon explicitly; a commitment-period forecast must not be interpreted as a full-contract forecast when their end dates differ.
+
+### Complete calendar day versus available billing data
+
+```text
+Last completed calendar day (UTC): 2026-10-22
+Latest reported completed usage day (UTC): 2026-10-21
+```
+
+These dates can differ because billing data may arrive later. The latest reported date is for the matching service and currency within the requested 30-day range. The report does not silently replace yesterday with an older day.
+
+Each scenario includes a `Days` coverage column, such as `7/7`. If a daily record is missing, the window's forecast is unavailable instead of assuming zero spend. An explicit zero-cost record is valid. This conservative rule means a genuinely idle day with no record is also unavailable. Even `7/7` proves only that each date has a record, not that OCI has finished processing every charge; values may be revised later.
+
+If the service has not existed for the full window, or net consumption is negative, that scenario is also unavailable. A usage request failure leaves the balance report visible and returns exit status `1`.
+
+For a reproducible reference date:
+
+```bash
+python3 oci_balance.py --as-of 2026-10-23
+```
+
+`--as-of` sets the window boundary and projection reference to midnight UTC on that date. Balances are still fetched live; this is **not a historical balance report**. Use a balance snapshot corresponding to the reference date when evaluating historical projections. Without the option, the script uses the current UTC time.
+
 ## Requirements and scope
 
 - Python 3.7 or later, using only the standard library.
 - OCI CLI with the `onesubscription` commands below.
 - `OCI_TENANCY` set to the target tenancy OCID (provided by Cloud Shell).
-- An authenticated OCI CLI session and permission to read the target subscriptions.
+- An authenticated OCI CLI session and permission to read the target subscriptions and computed usage.
 
 Outside Cloud Shell, configure the OCI CLI using your preferred supported authentication method, then set `OCI_TENANCY` before running the script. The script inherits the CLI's profile, region, and authentication settings; it does not create or modify credentials.
 
@@ -116,9 +171,10 @@ Run the offline regression checks:
 python3 -m unittest discover -v
 ```
 
-These checks cover mixed promotional and standard service rows, production commitment periods, explicit zero versus missing values, and continuing after a subscription failure. They use fictional fixtures and do not call OCI. Live behavior still depends on the target tenancy, CLI version, and permissions.
+These checks cover mixed promotional and standard service rows, production commitment periods, three independent forecast windows, date boundaries, missing days versus explicit zero spend, credit overrun, service/currency isolation, commitment horizons, and continuing after a subscription failure. They use fictional fixtures and do not call OCI. Live behavior still depends on the target tenancy, CLI version, and permissions.
 
 ## OCI APIs used
 
 1. [List organization subscriptions](https://docs.oracle.com/en-us/iaas/tools/oci-cli/latest/oci_cli_docs/cmdref/onesubscription/organization-subscription/organization-subscription/list.html) to discover subscription IDs.
 2. [List subscription details](https://docs.oracle.com/en-us/iaas/tools/oci-cli/latest/oci_cli_docs/cmdref/onesubscription/subscription/subscription/list.html) with `--is-commit-info-required true` to retrieve service and commitment data.
+3. [List aggregated computed usage](https://docs.oracle.com/en-us/iaas/tools/oci-cli/latest/oci_cli_docs/cmdref/onesubscription/computed-usage/aggregated-computed-usage-summary/list-aggregated-computed-usages.html) with `--grouping DAILY` to calculate the three recent-consumption scenarios.

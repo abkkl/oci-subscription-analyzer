@@ -3,6 +3,8 @@ import contextlib
 import io
 import os
 import unittest
+from datetime import datetime, timedelta, timezone
+from decimal import Decimal
 from unittest.mock import patch
 
 import oci_balance as report
@@ -67,11 +69,110 @@ class ReportTests(unittest.TestCase):
         with patch.dict(os.environ, {"OCI_TENANCY": "example-tenancy"}), \
                 patch.object(report, "cli", side_effect=fake_cli), \
                 contextlib.redirect_stdout(output), contextlib.redirect_stderr(errors):
-            status = report.main()
+            status = report.main([])
         self.assertEqual(status, 1)
         self.assertIn("SUBSCRIPTION allowed", output.getvalue())
         self.assertIn("Successful: 1 | Failed: 1", output.getvalue())
         self.assertIn("ERROR [denied]", errors.getvalue())
+
+
+class ForecastTests(unittest.TestCase):
+    def setUp(self):
+        self.now = datetime(2026, 10, 23, tzinfo=timezone.utc)
+        self.record = {"id": "example-service", "time-start": "2026-09-01T00:00:00Z",
+                       "time-end": "2026-11-02T00:00:00Z", "available-amount": "10000"}
+        self.daily = {}
+        for offset in range(1, 31):
+            self.daily[(self.now - timedelta(days=offset)).date()] = Decimal(100 if offset == 1 else 20 if offset <= 7 else 10)
+
+    def test_three_independent_forecasts_and_exact_window_dates(self):
+        month, week, previous = report.forecast_rows(self.record, self.daily, self.now)
+        self.assertEqual(month["rate"], Decimal(15))
+        self.assertEqual(month["unused"], Decimal(9850))
+        self.assertEqual(week["rate"], Decimal(220) / Decimal(7))
+        self.assertEqual(previous["rate"], Decimal(100))
+        self.assertEqual(previous["unused"], Decimal(9000))
+        self.assertEqual(str(month["first"]), "2026-09-23")
+        self.assertEqual(str(previous["last"]), "2026-10-22")
+
+    def test_missing_previous_day_is_not_zero_consumption(self):
+        del self.daily[(self.now - timedelta(days=1)).date()]
+        rows = report.forecast_rows(self.record, self.daily, self.now)
+        self.assertTrue(all(r["unused"] is None for r in rows))
+        self.assertEqual(rows[-1]["coverage"], "0/1")
+
+    def test_explicit_zero_is_valid_and_overrun_is_separate(self):
+        yesterday = (self.now - timedelta(days=1)).date()
+        self.daily[yesterday] = Decimal(0)
+        self.assertEqual(report.forecast_rows(self.record, self.daily, self.now)[-1]["unused"], Decimal(10000))
+        self.daily[yesterday] = Decimal(2000)
+        row = report.forecast_rows(self.record, self.daily, self.now)[-1]
+        self.assertEqual(row["unused"], Decimal(0))
+        self.assertEqual(row["beyond"], Decimal(10000))
+
+    def test_service_currency_and_incomplete_day_are_excluded(self):
+        def group(service_id, currency, metered, cost):
+            return {"parent-subscribed-service-id": service_id, "currency-code": currency,
+                    "aggregated-computed-usages": [{"time-metered-on": metered, "cost-unrounded": cost}]}
+        groups = [group("example-service", "TRY", "2026-10-22T00:00:00Z", "25"),
+                  group("other", "TRY", "2026-10-22T00:00:00Z", "500"),
+                  group("example-service", "EUR", "2026-10-22T00:00:00Z", "500"),
+                  group("example-service", "TRY", "2026-10-23T00:00:00Z", "500")]
+        actual = report.daily_usage(groups, "example-service", "TRY", self.now)
+        self.assertEqual(actual, {(self.now - timedelta(days=1)).date(): Decimal(25)})
+
+    def test_report_distinguishes_calendar_day_from_latest_reported_day(self):
+        groups = [{"parent-subscribed-service-id": "example-service", "currency-code": "TRY",
+                   "aggregated-computed-usages": [{"time-metered-on": "2026-10-21T00:00:00Z", "cost-unrounded": "10"}]}]
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            report.render_recent_forecast(self.record, "TRY", self.now, groups)
+        self.assertIn("Last completed calendar day (UTC): 2026-10-22", output.getvalue())
+        self.assertIn("Latest reported completed usage day (UTC): 2026-10-21", output.getvalue())
+        self.assertIn("Missing daily usage records", output.getvalue())
+
+    def test_commitment_horizon_does_not_use_contract_end(self):
+        service_record = dict(self.record, **{"commitment-services": [
+            {"time-start": "2026-10-01T00:00:00Z", "time-end": "2026-11-01T00:00:00Z", "available-amount": "500"}]})
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            report.render_recent_forecast(service_record, "EUR", self.now, [])
+        self.assertIn("Active commitment end (future renewals are not forecast) | 2026-11-01", output.getvalue())
+
+    def test_main_requests_daily_usage_and_keeps_balance_on_usage_failure(self):
+        calls = []
+        def fake_cli(*args):
+            calls.append(args)
+            if "organization-subscription" in args:
+                return [{"id": "example"}]
+            if "list-aggregated-computed-usages" in args:
+                raise RuntimeError("Example usage access denied")
+            return [{"currency": {"iso-code": "TRY"}, "status": "ACTIVE",
+                     "subscribed-services": [dict(self.record, product={"name": "Example", "part-number": "EXAMPLE"})]}]
+        output, errors = io.StringIO(), io.StringIO()
+        with patch.dict(os.environ, {"OCI_TENANCY": "example-tenancy"}), \
+                patch.object(report, "cli", side_effect=fake_cli), \
+                contextlib.redirect_stdout(output), contextlib.redirect_stderr(errors):
+            code = report.main(["--as-of", "2026-10-23"])
+        usage_call = next(c for c in calls if "list-aggregated-computed-usages" in c)
+        self.assertIn("DAILY", usage_call)
+        self.assertIn("2026-09-23T00:00:00+00:00", usage_call)
+        self.assertIn("2026-10-23T00:00:00+00:00", usage_call)
+        self.assertEqual(code, 1)
+        self.assertIn("10,000.00", output.getvalue())
+        self.assertIn("REMAINING BALANCE", output.getvalue())
+        self.assertIn("Usage request failed", output.getvalue())
+        self.assertIn("usage request failed", errors.getvalue())
+
+    def test_expired_and_ambiguous_periods_do_not_produce_forecasts(self):
+        expired = dict(self.record, **{"time-end": "2026-10-01T00:00:00Z"})
+        self.assertTrue(all(r["unused"] is None for r in report.forecast_rows(expired, self.daily, self.now)))
+        active_period = {"time-start": "2026-09-01T00:00:00Z", "time-end": "2026-11-01T00:00:00Z", "available-amount": "1000"}
+        ambiguous = dict(self.record, **{"commitment-services": [active_period, dict(active_period)]})
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            report.render_recent_forecast(ambiguous, "TRY", self.now, [])
+        self.assertIn("no unique active commitment period", output.getvalue())
 
 
 if __name__ == "__main__":
