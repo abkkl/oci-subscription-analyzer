@@ -149,7 +149,7 @@ class ReportTests(unittest.TestCase):
             with patch.dict(os.environ):
                 os.environ.pop("NO_COLOR", None)
                 report.render("example", [{"time-end": "2027-01-15T23:59:59Z"}])
-        self.assertIn("\033[1;36mSUBSCRIPTION example", output.getvalue())
+        self.assertIn("\033[1;33mSUBSCRIPTION example", output.getvalue())
         self.assertIn("\033[1;36mContract end", output.getvalue())
 
     def test_contract_countdown_uses_calendar_months_and_total_utc_days(self):
@@ -305,15 +305,17 @@ class ForecastTests(unittest.TestCase):
             report.render_recent_forecast(self.record, "EUR", self.now, [], daily_override=self.daily)
         lines = output.getvalue().splitlines()
         start = next(i for i, line in enumerate(lines) if line.startswith("Metric"))
-        stop = next(i for i in range(start, len(lines)) if lines[i].startswith("Result"))
+        stop = next(i for i in range(start, len(lines)) if lines[i].startswith("Forecast outcome"))
         block = lines[start:stop + 1]
         self.assertEqual([c.strip() for c in block[0].split("|")],
                          ["Metric (EUR)", "Previous day", "Last 7 days", "Last 30 days"])
         self.assertEqual([line.split("|")[0].strip() for line in block[2:] if "|" in line], [
-            "Avg/day Consumption", "Unused/Overage Credit - Daily", "Required/day Consumption", "Required/month Consumption",
             "Remaining Credit", "Future Consumption", "Unused/Overage Credit - Total",
-            "Days to horizon", "Coverage", "Result"])
-        self.assertEqual([c.strip() for c in block[2].split("|")][1:], ["100.0", "31.4", "15.0"])
+            "Actual Consumption - Daily", "Required Consumption - Daily", "Unused/Overage Credit - Daily",
+            "Actual Consumption - Monthly", "Required Consumption - Monthly", "Unused/Overage Credit - Monthly",
+            "Days to horizon", "Coverage", "Forecast outcome"])
+        actual = next(line for line in block if line.startswith("Actual Consumption - Daily"))
+        self.assertEqual([c.strip() for c in actual.split("|")][1:], ["100.0", "31.4", "15.0"])
         self.assertEqual([c.strip() for c in block[-1].split("|")][1:], ["Unused estimate"] * 3)
         self.assertTrue(all(len(line) <= 90 for line in block))
 
@@ -377,8 +379,8 @@ class ForecastTests(unittest.TestCase):
         lines = output.getvalue().splitlines()
         cells = {line.split("|")[0].strip(): line.split("|")[-1].strip() for line in lines if "|" in line}
         self.assertEqual(cells["Days to horizon"], "0.5 Days")
-        self.assertEqual(cells["Required/day Consumption"], "200.0")
-        self.assertEqual(cells["Required/month Consumption"], "6,200.0")
+        self.assertEqual(cells["Required Consumption - Daily"], "200.0")
+        self.assertEqual(cells["Required Consumption - Monthly"], "6,200.0")
         self.assertIn("Monthly calculation: 744 hours = 31 days.", output.getvalue())
         self.assertEqual(cells["Future Consumption"], "5.0")
         self.assertEqual(cells["Unused/Overage Credit - Total"], "95.0")
@@ -392,12 +394,13 @@ class ForecastTests(unittest.TestCase):
         with contextlib.redirect_stdout(output):
             report.render_recent_forecast(self.record, "EUR", self.now, [], daily_override=daily)
         text = output.getvalue()
-        self.assertIn("Previous day: Overage credit | Last 7 days: Unused credit | Last 30 days: Unused credit", text)
+        self.assertNotIn("Forecast outcome:", text)
+        self.assertIn("Baseline\nPrevious day (UTC)", text)
         daily_line = next(line for line in text.splitlines() if line.startswith("Unused/Overage Credit - Daily"))
         total_line = next(line for line in text.splitlines() if line.startswith("Unused/Overage Credit - Total"))
         self.assertEqual(daily_line.split("|")[1].strip(), "1,000.0")
         self.assertEqual(total_line.split("|")[1].strip(), "10,000.0")
-        result_line = next(line for line in text.splitlines() if line.startswith("Result"))
+        result_line = next(line for line in text.splitlines() if line.startswith("Forecast outcome"))
         self.assertEqual([cell.strip() for cell in result_line.split("|")[1:]],
                          ["Overage estimate", "Unused estimate", "Unused estimate"])
         self.assertIn("(10 days remaining; 10 days total)", text)

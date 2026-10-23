@@ -55,22 +55,24 @@ The horizon is the **unique active commitment's end**, or the service contract e
 
 Let `B` = remaining credit, `R` = baseline daily consumption and `D` = fractional days to the forecast horizon:
 
-The table header includes currency. Columns are Previous day, Last 7 days and Last 30 days. Rows are divided into three groups:
+Subscription headings and their separators are yellow. Baseline date ranges have a `Baseline` heading. The table header includes currency. Columns are Previous day, Last 7 days and Last 30 days. Rows are divided into four groups:
 
 | Group | Metric | Meaning |
 | --- | --- | --- |
-| Daily/monthly | Avg/day Consumption | `R`, from complete baseline records. |
-| | Unused/Overage Credit - Daily | Forecast unused or overage total divided by `D`. |
-| | Required/day Consumption | `B / D`, needed to use the remaining credit by the horizon. |
-| | Required/month Consumption | Required daily consumption × 31; **744 hours = 31 days**, stated above the table. |
-| Credit totals | Remaining Credit | `B`, for the service or selected active commitment. |
+| Credit totals | Remaining Credit | `B`, the service or selected commitment balance. |
 | | Future Consumption | `R × D`. |
 | | Unused/Overage Credit - Total | Unused = `max(0, B − R × D)`; overage = `max(0, R × D − B)`. |
-| Coverage/result | Days to horizon | Fractional duration `D`, displayed as `84.4 Days`. |
-| | Coverage | Reported dates / required dates, such as `7/7`. |
-| | Result | Unused estimate, Overage estimate, Balanced estimate or N/A. |
+| Daily | Actual Consumption - Daily | `R`, the selected baseline's daily average. |
+| | Required Consumption - Daily | `B / D`, needed to use credit by the horizon. |
+| | Unused/Overage Credit - Daily | Unused or overage total divided by `D`. |
+| Monthly | Actual Consumption - Monthly | `R × 31`, a monthly equivalent of the baseline, not an actual calendar-month bill. |
+| | Required Consumption - Monthly | Required daily consumption × 31. |
+| | Unused/Overage Credit - Monthly | Unused or overage daily amount × 31. |
+| Coverage/outcome | Days to horizon | `D`, e.g. `84.4 Days`. |
+| | Coverage | Reported dates / required dates, e.g. `7/7`. |
+| | Forecast outcome | Unused estimate, Overage estimate, Balanced estimate or N/A. |
 
-The horizon heading also shows remaining calendar years/months/days and total calendar days, omitting zero components. Forecast arithmetic uses unrounded fractional days. Monthly figures use a fixed 744 hours, not the actual length of a calendar month. Unused is yellow and overage red in supported terminals. The outcome is stated above the table and in Result; amount cells contain numbers only. Mixed scenarios keep their own outcome. Future overage excludes already reported overage.
+The horizon heading also shows remaining calendar years/months/days and total calendar days, omitting zero components. Forecast arithmetic uses unrounded fractional days. Monthly figures use a fixed 744 hours, not the actual length of a calendar month. Unused is yellow and overage red in supported terminals. The outcome appears only in the final table row; amount cells contain numbers only. Mixed scenarios keep their own outcome. Future overage excludes already reported overage.
 
 Cost Analysis supplies subscription-level daily costs only when a single active credit pool is identified in that currency, assuming those costs consume that pool. Otherwise, exact service-level OneSubscription usage is used.
 
@@ -93,34 +95,37 @@ Fictional examples: [default report](sample-output.txt) · [expanded history](sa
 Forecast excerpt (fictional data; full report linked above):
 
 ```text
-FORECAST (TRY) | Horizon: Active commitment end - 2026-11-03 (11 days remaining; 11 days total)
+FORECAST (EUR) | Horizon: Active commitment end - 2026-11-02 (10 days remaining; 10 days total)
 
-Balance snapshot UTC: 2026-10-23 12:00:00
+Balance snapshot UTC: 2026-10-23 00:00:00
 Latest reported completed usage day (UTC): 2026-10-22
 Future renewals and credit rollover are not forecast.
 
+Baseline
 Previous day (UTC): 2026-10-22 - 2026-10-22
 Last 7 days (UTC): 2026-10-16 - 2026-10-22
 Last 30 days (UTC): 2026-09-23 - 2026-10-22
 Monthly calculation: 744 hours = 31 days.
-Forecast outcome: Previous day: Overage credit | Last 7 days: Unused credit | Last 30 days: Unused credit
 
-Metric (TRY)                  | Previous day     | Last 7 days     | Last 30 days
-------------------------------+------------------+-----------------+----------------
-Avg/day Consumption           |          3,000.0 |         1,285.7 |           530.0
-Unused/Overage Credit - Daily |            391.3 |         1,323.0 |         2,078.7
-Required/day Consumption      |          2,608.7 |         2,608.7 |         2,608.7
-Required/month Consumption    |         80,869.6 |        80,869.6 |        80,869.6
-------------------------------+------------------+-----------------+----------------
-Remaining Credit              |         30,000.0 |        30,000.0 |        30,000.0
-Future Consumption            |         34,500.0 |        14,785.7 |         6,095.0
-Unused/Overage Credit - Total |          4,500.0 |        15,214.3 |        23,905.0
-------------------------------+------------------+-----------------+----------------
-Days to horizon               |        11.5 Days |       11.5 Days |       11.5 Days
-Coverage                      |              1/1 |             7/7 |           30/30
-Result                        | Overage estimate | Unused estimate | Unused estimate
+Metric (EUR)                    | Previous day     | Last 7 days      | Last 30 days
+--------------------------------+------------------+------------------+----------------
+Remaining Credit                |          1,000.0 |          1,000.0 |         1,000.0
+Future Consumption              |          2,000.0 |          1,142.9 |           650.0
+Unused/Overage Credit - Total   |          1,000.0 |            142.9 |           350.0
+--------------------------------+------------------+------------------+----------------
+Actual Consumption - Daily      |            200.0 |            114.3 |            65.0
+Required Consumption - Daily    |            100.0 |            100.0 |           100.0
+Unused/Overage Credit - Daily   |            100.0 |             14.3 |            35.0
+--------------------------------+------------------+------------------+----------------
+Actual Consumption - Monthly    |          6,200.0 |          3,542.9 |         2,015.0
+Required Consumption - Monthly  |          3,100.0 |          3,100.0 |         3,100.0
+Unused/Overage Credit - Monthly |          3,100.0 |            442.9 |         1,085.0
+--------------------------------+------------------+------------------+----------------
+Days to horizon                 |        10.0 Days |        10.0 Days |       10.0 Days
+Coverage                        |              1/1 |              7/7 |           30/30
+Forecast outcome                | Overage estimate | Overage estimate | Unused estimate
 
-Comment: Consumption trend: 7-day average 1,285.7 TRY/day vs 30-day average 530.0 TRY/day -> 142.6% higher; 2.4x the 30-day average.
+Comment: Consumption trend: 7-day average 114.3 EUR/day vs 30-day average 65.0 EUR/day -> 75.8% higher; 1.8x the 30-day average.
 ```
 
 | Issue | Check |
@@ -139,6 +144,8 @@ Failures do not stop other subscriptions. Exit code `1` means a request error/pa
 python3 -m unittest discover -v
 ```
 
-Tests use fictional data and do not call OCI.
+The suite includes seven end-to-end scenarios using a temporary fake OCI CLI: overage, unused, balanced, mixed, exhausted credit with existing overage, zero consumption and missing records. It runs the real report and subprocess path without connecting to OCI.
 
-Version **2.0** · ahmet.bakkal@oracle.com
+See [overage test report](overage-test-report.md), [full overage output](sample-output-overage.txt) and [exhausted-credit output](sample-output-exhausted.txt).
+
+Version **2.1** · ahmet.bakkal@oracle.com
