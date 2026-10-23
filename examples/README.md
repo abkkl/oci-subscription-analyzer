@@ -1,14 +1,16 @@
 # Example reports
 
-All reports use fictional data. `.txt` files show plain output; terminal colors are omitted.
+All reports use fictional data. HTML files preserve colors and include Print / Save as PDF. Text files show the terminal frame without ANSI colors.
 
-| Report | Scenario |
-| --- | --- |
-| [Default report](sample-output.txt) | Active service, four forecast baselines and a history summary. |
-| [Expanded history](sample-output-history.txt) | Full past service and commitment details. |
-| [Overage](sample-output-overage.txt) | All four baselines forecast overage. |
-| [Mixed outcomes](sample-output-mixed.txt) | Some baselines forecast overage, others unused credit. |
-| [Exhausted credit](sample-output-exhausted.txt) | Existing overage stays separate from future overage. |
-| [Missing days](sample-output-missing-days.txt) | 64/90 daily records; average = sum of the 64 reported days / 64. Coverage retains 64/90. |
+| Scenario | Terminal | HTML |
+| --- | --- | --- |
+| Default report and history summary | [Text](sample-output.txt) | [HTML](sample-output.html) |
+| Expanded history | [Text](sample-output-history.txt) | [HTML](sample-output-history.html) |
+| All four baselines overage | [Text](sample-output-overage.txt) | [HTML](sample-output-overage.html) |
+| Mixed unused/overage outcomes | [Text](sample-output-mixed.txt) | [HTML](sample-output-mixed.html) |
+| Exhausted credit with existing overage | [Text](sample-output-exhausted.txt) | [HTML](sample-output-exhausted.html) |
+| 64/90 records; average uses 64 days | [Text](sample-output-missing-days.txt) | [HTML](sample-output-missing-days.html) |
 
-See the [validation report](../overage-test-report.md) for test scope and expected results.
+Download paths in these snapshots illustrate the format; your actual report prints its own generated filename.
+
+[Validation report](../overage-test-report.md)
