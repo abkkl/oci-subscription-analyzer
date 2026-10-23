@@ -65,7 +65,7 @@ Promo credit | Service total | Funded | Consumed | Remaining | Overage
 
 Commitment periods: 0
 
-FORECAST - Horizon: Service contract end | 2026-11-02 (TRY)
+FORECAST (TRY) | Horizon: Service contract end - 2026-11-02
 
 Balance snapshot UTC: 2026-10-23 00:00:00
 Latest reported completed usage day (UTC): 2026-10-22

@@ -302,7 +302,7 @@ def render_recent_forecast(service, currency, as_of, groups, usage_error=None, d
         target = {}
         scope = "Unavailable: service is not ACTIVE"
     print()
-    heading(f"FORECAST - Horizon: {scope} | {date(target.get('time-end'))} ({shown(currency)})")
+    heading(f"FORECAST ({shown(currency)}) | Horizon: {scope} - {date(target.get('time-end'))}")
     print()
     print(f"Balance snapshot UTC: {as_of.strftime('%Y-%m-%d %H:%M:%S')}")
     print(f"Latest reported completed usage day (UTC): {latest}")

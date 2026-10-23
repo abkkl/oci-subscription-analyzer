@@ -185,7 +185,7 @@ class ForecastTests(unittest.TestCase):
         output = io.StringIO()
         with contextlib.redirect_stdout(output):
             report.render_recent_forecast(service_record, "EUR", self.now, [])
-        self.assertIn("FORECAST - Horizon: Active commitment end | 2026-11-01 (EUR)", output.getvalue())
+        self.assertIn("FORECAST (EUR) | Horizon: Active commitment end - 2026-11-01", output.getvalue())
         self.assertIn("Overage Credit at End", output.getvalue())
         self.assertIn("Contract days left", output.getvalue())
         forecast_lines = [line for line in output.getvalue().splitlines() if line.startswith("Last 30 days")]
@@ -258,8 +258,8 @@ class CostAnalysisTests(unittest.TestCase):
         self.assertNotIn("Source:", text)
         self.assertNotIn("Scope:", text)
         self.assertNotIn("Assumption:", text)
-        self.assertIn("FORECAST - Horizon: Service contract end | 2026-11-02 (TRY)\n\nBalance snapshot", text)
-        self.assertEqual(text.count("FORECAST - Horizon:"), 1)
+        self.assertIn("FORECAST (TRY) | Horizon: Service contract end - 2026-11-02\n\nBalance snapshot", text)
+        self.assertEqual(text.count("FORECAST (TRY) | Horizon:"), 1)
         self.assertEqual(sum(line.startswith("Baseline") for line in text.splitlines()), 1)
         self.assertIn("Last 30 days (2026-09-23 - 2026-10-22)", text)
         self.assertNotIn("Windows start", text)
