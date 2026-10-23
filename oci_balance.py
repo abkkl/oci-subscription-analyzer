@@ -8,21 +8,39 @@ import sys
 from decimal import Decimal, InvalidOperation
 from datetime import datetime, timedelta, timezone
 
+CLI_REGION = None
 
-def cli(*args):
+
+def cli_payload(*args):
+    region_args = ["--region", CLI_REGION] if CLI_REGION else []
     result = subprocess.run(
-        ["oci", *args, "--output", "json"], capture_output=True, text=True
+        ["oci", *region_args, *args, "--output", "json"], capture_output=True, text=True
     )
     if result.returncode:
         raise RuntimeError(result.stderr.strip() or "OCI CLI call failed.")
     try:
         body = json.loads(result.stdout)
-        data = body["data"]
+        return body
+    except ValueError as exc:
+        raise RuntimeError(f"Could not read the API response: {exc}") from exc
+
+
+def cli(*args):
+    try:
+        data = cli_payload(*args)["data"]
         if not isinstance(data, list):
             raise ValueError("Expected an array response.")
         return data
     except (ValueError, KeyError) as exc:
         raise RuntimeError(f"Could not read the API response: {exc}") from exc
+
+
+def home_region(tenancy):
+    regions = cli("iam", "region-subscription", "list", "--tenancy-id", tenancy, "--all")
+    homes = [r.get("region-name") for r in regions if r.get("is-home-region") is True and r.get("region-name")]
+    if len(homes) != 1:
+        raise RuntimeError("Could not identify one home region. Run Cloud Shell in the tenancy home region and check IAM region-subscription read access.")
+    return homes[0]
 
 
 def shown(value):
@@ -85,6 +103,70 @@ def daily_usage(groups, service_id, currency, cutoff):
     return totals
 
 
+def fetch_cost_usage(tenancy, subscription_id, cutoff):
+    """Fetch Cost Analysis daily costs in the detected home region, including pages."""
+    rows, page, seen = [], None, set()
+    while True:
+        args = ["usage-api", "usage-summary", "request-summarized-usages",
+                "--tenant-id", tenancy, "--granularity", "DAILY", "--query-type", "COST",
+                "--time-usage-started", (cutoff - timedelta(days=30)).isoformat(),
+                "--time-usage-ended", cutoff.isoformat(), "--group-by", '["subscriptionId"]',
+                "--filter", json.dumps({"operator": "AND", "dimensions": [
+                    {"key": "subscriptionId", "value": str(subscription_id)}]}),
+                "--is-aggregate-by-time", "false", "--limit", "1000"]
+        if page:
+            args.extend(["--page", page])
+        payload = cli_payload(*args)
+        data = payload.get("data")
+        if not isinstance(data, dict) or not isinstance(data.get("items"), list):
+            raise RuntimeError("Cost Analysis returned an unexpected response shape.")
+        rows.extend(data["items"])
+        page = payload.get("opc-next-page")
+        if not page:
+            return rows
+        if page in seen:
+            raise RuntimeError("Cost Analysis repeated a pagination token.")
+        seen.add(page)
+
+
+def subscription_daily_usage(rows, subscription_id, currency, cutoff):
+    totals = {}
+    for row in rows:
+        if str(row.get("subscription-id")) != str(subscription_id) or row.get("currency") != currency:
+            continue
+        if row.get("is-forecast") is True:
+            continue
+        start = timestamp(row.get("time-usage-started"))
+        end = timestamp(row.get("time-usage-ended"))
+        if start is None or end is None:
+            raise ValueError("Cost Analysis returned a matching record without valid dates.")
+        if start < cutoff - timedelta(days=30) or end > cutoff or start >= cutoff:
+            continue
+        if start.time() != datetime.min.time() or end - start != timedelta(days=1):
+            raise ValueError("Cost Analysis returned a non-daily usage interval.")
+        cost = decimal_value(row.get("computed-amount"))
+        if cost is None:
+            raise ValueError("Cost Analysis returned a matching record without a valid amount.")
+        totals[start.date()] = totals.get(start.date(), Decimal(0)) + cost
+    return totals
+
+
+def credit_pool_ids(summaries, currency):
+    ids = set()
+    for summary in summaries:
+        if (summary.get("currency") or {}).get("iso-code") != currency:
+            continue
+        for service in summary.get("subscribed-services") or []:
+            if not service.get("id") or service.get("status") not in (None, "ACTIVE"):
+                continue
+            amounts = [decimal_value(service.get(key)) for key in (
+                "original-promo-amount", "total-value", "funded-allocation-value", "used-amount", "available-amount")]
+            amounts += [decimal_value(c.get("available-amount")) for c in service.get("commitment-services") or []]
+            if any(amount is not None and amount > 0 for amount in amounts):
+                ids.add(service["id"])
+    return ids
+
+
 def forecast_rows(record, daily, as_of, history_start=None):
     """Use fixed 30/7/1-day windows, excluding the current incomplete UTC day."""
     start = timestamp(record.get("time-start"))
@@ -123,12 +205,21 @@ def forecast_rows(record, daily, as_of, history_start=None):
     return result
 
 
-def render_recent_forecast(service, currency, as_of, groups, usage_error=None):
+def render_recent_forecast(service, currency, as_of, groups, usage_error=None, daily_override=None):
     cutoff = as_of.replace(hour=0, minute=0, second=0, microsecond=0)
-    print(f"\nFORECAST | Balance snapshot UTC: {as_of.strftime('%Y-%m-%d %H:%M:%S')}")
+    print("\nFORECAST\n")
+    print(f"Balance snapshot UTC: {as_of.strftime('%Y-%m-%d %H:%M:%S')}")
     print(f"Last completed calendar day (UTC): {(cutoff - timedelta(days=1)).date()}")
     try:
-        daily = daily_usage(groups or [], service.get("id"), currency, cutoff) if service.get("id") else {}
+        if daily_override is not None:
+            daily = daily_override
+            usage_error = None
+            print("Source: Cost Analysis daily costs, matched by subscription and currency.")
+            print("Scope: Subscription-level estimate for the only identified credit pool.")
+            print("Assumption: all reported subscription costs consume this credit pool.")
+        else:
+            daily = daily_usage(groups or [], service.get("id"), currency, cutoff) if service.get("id") else {}
+            print("Source: OneSubscription computed usage, matched by service and currency.")
     except ValueError as exc:
         daily, usage_error = {}, str(exc)
     latest = max(daily).isoformat() if daily else "No matching usage returned"
@@ -142,27 +233,38 @@ def render_recent_forecast(service, currency, as_of, groups, usage_error=None):
                   and timestamp(c["time-start"]) <= as_of < timestamp(c["time-end"])]
         if len(active) == 1:
             target = active[0]
-            scope = "Active commitment end (future renewals are not forecast)"
+            scope = "Active commitment end"
         else:
             target = {}
             scope = "Unavailable: no unique active commitment period"
     if service.get("status") not in (None, "ACTIVE"):
         target = {}
         scope = "Unavailable: service is not ACTIVE"
-    print(f"Forecast horizon: {scope} | {date(target.get('time-end'))}")
-    print(f"Amounts: {shown(currency)} | 1 month = 30 complete UTC days; no currency conversion.")
+    print(f"Forecast horizon: {scope}")
+    print(f"Horizon end (UTC): {date(target.get('time-end'))}")
+    if commitments:
+        print("Future renewals and credit rollover are not forecast.")
+    print(f"Amounts: {shown(currency)} | 1 month = 30 complete UTC days.")
     rows = forecast_rows(target, daily, as_of, timestamp(service.get("time-start")))
     if usage_error:
         print(f"Usage unavailable: {usage_error}")
         for row in rows:
             row.update(rate=None, unused=None, beyond=None, reason="Usage request failed")
-    table(
-        ["Baseline", "From UTC", "Through UTC", "Days", "Avg/day", "Unused at end", "Beyond credit", "Status"],
-        [[r["label"], r["first"], r["last"], r["coverage"], number(r["rate"]),
-          number(r["unused"]), number(r["beyond"]), r["reason"] or "Estimate"] for r in rows],
-    )
-    print("Estimate = max(0, reported remaining credit - daily rate x days to horizon).")
-    print("Missing days are not treated as zero; reported usage may still be delayed or revised.")
+    for row in rows:
+        print(f"\n  {row['label']}")
+        print(f"  Window (UTC): {row['first']} → {row['last']}")
+        print(f"  Daily records: {row['coverage']}")
+        table(
+            ["  Estimate", shown(currency)],
+            [["  Average / day", number(row["rate"])],
+             ["  UNUSED CREDIT AT END", number(row["unused"])],
+             ["  Consumption beyond credit", number(row["beyond"])]],
+        )
+        print(f"  Status: {row['reason'] or 'Estimate'}")
+    print()
+    print("Estimate = remaining credit - future consumption, minimum zero.")
+    print("Missing days are not treated as zero.")
+    print("Reported usage may still be delayed or revised.")
 
 
 def table(headers, rows):
@@ -175,7 +277,7 @@ def table(headers, rows):
         print(line(row))
 
 
-def render(subscription_id, summaries, as_of=None, usage=None, usage_error=None):
+def render(subscription_id, summaries, as_of=None, usage=None, usage_error=None, cost_usage=None, cost_error=None):
     as_of = as_of or datetime.now(timezone.utc)
     for summary in summaries:
         currency = (summary.get("currency") or {}).get("iso-code")
@@ -209,10 +311,26 @@ def render(subscription_id, summaries, as_of=None, usage=None, usage_error=None)
                       *[number(c.get(key)) for key in ("quantity", "line-net-amount", "funded-allocation-value", "used-amount", "available-amount")]]
                      for c in commitments],
                 )
-            render_recent_forecast(service, currency, as_of, usage, usage_error)
+            daily_override = None
+            candidates = credit_pool_ids(summaries, currency)
+            if cost_usage is not None and candidates == {service.get("id")}:
+                try:
+                    cutoff = as_of.replace(hour=0, minute=0, second=0, microsecond=0)
+                    daily = subscription_daily_usage(cost_usage, subscription_id, currency, cutoff)
+                    if daily:
+                        daily_override = daily
+                except ValueError as exc:
+                    cost_error = str(exc)
+            if cost_error:
+                print(f"\nCost Analysis unavailable: {cost_error}")
+            elif len(candidates) > 1:
+                print("\nSubscription costs are not allocated: multiple credit pools exist.")
+            render_recent_forecast(service, currency, as_of, usage, usage_error, daily_override)
 
 
 def main(argv=None):
+    global CLI_REGION
+    CLI_REGION = None
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--as-of", metavar="YYYY-MM-DD", help="Forecast reference date at 00:00 UTC; defaults to the current UTC time. Uses current API balances; this option does not retrieve historical balances.")
     args = parser.parse_args(argv)
@@ -226,7 +344,12 @@ def main(argv=None):
     if not tenancy:
         print("ERROR: OCI_TENANCY is missing. Run this script in OCI Cloud Shell.", file=sys.stderr)
         return 1
+    print("OCI SUBSCRIPTION AND BALANCE REPORT")
+    print("Report version: 1.1 | Home-region routing and Cost Analysis forecasts")
+    print("Region note: Run Cloud Shell in the tenancy home region.")
     try:
+        CLI_REGION = home_region(tenancy)
+        print(f"Home region: {CLI_REGION} (selected automatically for API calls)")
         subscriptions = cli("onesubscription", "organization-subscription", "organization-subscription", "list", "--compartment-id", tenancy, "--all")
     except (RuntimeError, OSError) as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
@@ -235,7 +358,6 @@ def main(argv=None):
     if not ids:
         print("No accessible subscriptions found.")
         return 0
-    print("OCI SUBSCRIPTION AND BALANCE REPORT")
     print("— = No value returned by the API. Service and commitment amounts are not added together.")
     failed = 0
     for subscription_id in ids:
@@ -244,6 +366,12 @@ def main(argv=None):
             if not summaries:
                 raise RuntimeError("No subscription details returned.")
             cutoff = as_of.replace(hour=0, minute=0, second=0, microsecond=0)
+            cost_usage, cost_error = None, None
+            try:
+                cost_usage = fetch_cost_usage(tenancy, subscription_id, cutoff)
+            except (RuntimeError, OSError) as exc:
+                cost_error = str(exc)
+                print(f"WARNING [{subscription_id}]: Cost Analysis request failed: {exc}", file=sys.stderr)
             usage, usage_error = [], None
             try:
                 usage = cli("onesubscription", "computed-usage", "aggregated-computed-usage-summary", "list-aggregated-computed-usages",
@@ -252,9 +380,10 @@ def main(argv=None):
                             "--time-to", cutoff.isoformat(), "--grouping", "DAILY", "--all")
             except (RuntimeError, OSError) as exc:
                 usage_error = str(exc)
-                failed += 1
                 print(f"WARNING [{subscription_id}]: usage request failed: {exc}", file=sys.stderr)
-            render(subscription_id, summaries, as_of, usage, usage_error)
+            render(subscription_id, summaries, as_of, usage, usage_error, cost_usage, cost_error)
+            if usage_error or cost_error:
+                failed += 1
         except (RuntimeError, OSError) as exc:
             failed += 1
             print(f"\nERROR [{subscription_id}]: {exc}", file=sys.stderr)

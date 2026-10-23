@@ -15,6 +15,11 @@ def service(sku, **values):
 
 
 class ReportTests(unittest.TestCase):
+    def setUp(self):
+        patcher = patch.object(report, "fetch_cost_usage", return_value=[])
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
     def test_poc_credit_is_preserved_alongside_zero_standard_service(self):
         summary = {
             "currency": {"iso-code": "USD"}, "status": "ACTIVE",
@@ -58,6 +63,8 @@ class ReportTests(unittest.TestCase):
 
     def test_subscription_failure_is_reported_without_stopping_other_subscriptions(self):
         def fake_cli(*args):
+            if "region-subscription" in args:
+                return [{"region-name": "eu-amsterdam-1", "is-home-region": True}]
             if "organization-subscription" in args:
                 return [{"id": "denied"}, {"id": "allowed"}]
             subscription = args[args.index("--subscription-id") + 1]
@@ -78,6 +85,9 @@ class ReportTests(unittest.TestCase):
 
 class ForecastTests(unittest.TestCase):
     def setUp(self):
+        patcher = patch.object(report, "fetch_cost_usage", return_value=[])
+        patcher.start()
+        self.addCleanup(patcher.stop)
         self.now = datetime(2026, 10, 23, tzinfo=timezone.utc)
         self.record = {"id": "example-service", "time-start": "2026-09-01T00:00:00Z",
                        "time-end": "2026-11-02T00:00:00Z", "available-amount": "10000"}
@@ -137,12 +147,15 @@ class ForecastTests(unittest.TestCase):
         output = io.StringIO()
         with contextlib.redirect_stdout(output):
             report.render_recent_forecast(service_record, "EUR", self.now, [])
-        self.assertIn("Active commitment end (future renewals are not forecast) | 2026-11-01", output.getvalue())
+        self.assertIn("Forecast horizon: Active commitment end", output.getvalue())
+        self.assertIn("Horizon end (UTC): 2026-11-01", output.getvalue())
 
     def test_main_requests_daily_usage_and_keeps_balance_on_usage_failure(self):
         calls = []
         def fake_cli(*args):
             calls.append(args)
+            if "region-subscription" in args:
+                return [{"region-name": "eu-amsterdam-1", "is-home-region": True}]
             if "organization-subscription" in args:
                 return [{"id": "example"}]
             if "list-aggregated-computed-usages" in args:
@@ -173,6 +186,71 @@ class ForecastTests(unittest.TestCase):
         with contextlib.redirect_stdout(output):
             report.render_recent_forecast(ambiguous, "TRY", self.now, [])
         self.assertIn("no unique active commitment period", output.getvalue())
+
+
+class CostAnalysisTests(unittest.TestCase):
+    def setUp(self):
+        self.now = datetime(2026, 10, 23, tzinfo=timezone.utc)
+
+    def costs(self, subscription="example", currency="TRY"):
+        return [{"subscription-id": subscription, "currency": currency,
+                 "computed-amount": "10", "time-usage-started": (self.now - timedelta(days=i)).isoformat(),
+                 "time-usage-ended": (self.now - timedelta(days=i-1)).isoformat()}
+                for i in range(1, 31)]
+
+    def summaries(self):
+        return [{"currency": {"iso-code": "TRY"}, "status": "ACTIVE", "subscribed-services": [
+            service("PROMO", id="credit", **{"status": "ACTIVE", "original-promo-amount": "10000", "available-amount": "9000",
+                "time-start": "2026-08-01T00:00:00Z", "time-end": "2026-11-02T00:00:00Z"}),
+            service("STANDARD", id="zero", **{"available-amount": "0", "used-amount": "0"}),
+        ]}]
+
+    def test_subscription_costs_forecast_single_poc_pool_without_service_usage(self):
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            report.render("example", self.summaries(), self.now, cost_usage=self.costs())
+        text = out.getvalue()
+        self.assertIn("8,900.00", text)
+        self.assertIn("Daily records: 30/30", text)
+        self.assertIn("Latest reported completed usage day (UTC): 2026-10-22", text)
+        self.assertEqual(text.count("Scope: Subscription-level estimate"), 1)
+        self.assertIn("FORECAST\n\nBalance snapshot", text)
+
+    def test_multiple_pools_are_not_assigned_whole_subscription_cost(self):
+        summaries = self.summaries()
+        summaries[0]["subscribed-services"][1]["available-amount"] = "1000"
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            report.render("example", summaries, self.now, cost_usage=self.costs())
+        self.assertNotIn("Scope: Subscription-level estimate", out.getvalue())
+        self.assertIn("multiple credit pools", out.getvalue())
+
+    def test_cost_records_exclude_other_subscription_currency_and_future_values(self):
+        rows = self.costs() + self.costs("other") + self.costs(currency="EUR")
+        result = report.subscription_daily_usage(rows, "example", "TRY", self.now)
+        self.assertEqual(len(result), 30)
+        self.assertEqual(sum(result.values()), Decimal(300))
+
+    def test_pagination_is_followed(self):
+        with patch.object(report, "cli_payload", side_effect=[
+            {"data": {"items": [self.costs()[0]]}, "opc-next-page": "page-2"},
+            {"data": {"items": [self.costs()[1]]}},
+        ]) as mock_cli:
+            result = report.fetch_cost_usage("example-tenancy", "example", self.now)
+        self.assertEqual(len(result), 2)
+        self.assertIn("--page", mock_cli.call_args_list[1][0])
+
+    def test_home_region_is_discovered_and_explicit_in_command(self):
+        with patch.object(report, "cli", return_value=[
+            {"region-name": "eu-frankfurt-1", "is-home-region": False},
+            {"region-name": "eu-amsterdam-1", "is-home-region": True},
+        ]):
+            self.assertEqual(report.home_region("example"), "eu-amsterdam-1")
+        completed = type("Completed", (), {"returncode": 0, "stdout": '{"data": []}'})()
+        with patch.object(report, "CLI_REGION", "eu-amsterdam-1"), \
+                patch.object(report.subprocess, "run", return_value=completed) as run:
+            report.cli("example")
+        self.assertEqual(run.call_args[0][0][:3], ["oci", "--region", "eu-amsterdam-1"])
 
 
 if __name__ == "__main__":

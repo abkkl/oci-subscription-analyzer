@@ -6,6 +6,8 @@ A read-only command-line report for OCI subscriptions, promotional credits, serv
 
 Open **OCI Console → Cloud Shell** and paste:
 
+**Use your tenancy's home region for billing and usage operations.** The script discovers the home region using IAM region subscriptions and explicitly selects it for subsequent API calls. If region discovery fails, the script stops with an explanation rather than guessing a region. Cloud Shell network access must also permit calls to that region; starting Cloud Shell in the home region is recommended.
+
 ```bash
 curl -fsSL https://raw.githubusercontent.com/abkkl/oci-subscription-analyzer/main/oci_balance.py -o oci_balance.py && python3 oci_balance.py
 ```
@@ -31,7 +33,7 @@ No password, API key setup, Python packages, or `config.ini` file is required in
 - Three unused-credit forecasts based on the last 30 complete days, last 7 complete days, and the previous complete day's consumption.
 - The last completed UTC calendar date and the latest completed usage date actually returned by OCI, shown separately.
 
-The same report handles PoC and production records. The fields populated by OCI depend on the subscription and service type; successful execution does not imply that every billing field will be populated.
+The same report handles PoC and production records. The fields populated by OCI depend on the subscription and service type; successful execution does not imply that every billing field will be populated. Forecasts are printed as three separate compact blocks with a blank line after the `FORECAST` heading to avoid a very wide table wrapping in Cloud Shell.
 
 ## Example output
 
@@ -83,11 +85,20 @@ Start UTC  | End UTC    | Quantity  | Net amount | Funded | Consumed | Remaining
 
 `—` means the API did not return a value. Explicit zeros remain `0.00`. Missing values, including the literal string `"null"`, are never converted to zero.
 
-Service amounts and commitment-period amounts may describe overlapping balances, so the report does **not** add them together. It also does not sum currencies or infer a monetary balance from a commitment's quantity. All amounts come from the API; there is no fallback estimate based on Cost Analysis.
+Service amounts and commitment-period amounts may describe overlapping balances, so the report does **not** add them together. It also does not sum currencies or infer a monetary balance from a commitment's quantity. Displayed balances come from OneSubscription. Cost Analysis is used only for the consumption rates in the separately labelled forecast.
 
 ## Consumption forecasts
 
-For each service, the report requests daily aggregated computed usage for the previous 30 complete UTC days. It matches the exact parent subscribed service ID and currency, then sums the API's `cost-unrounded` values per metered day. It does not substitute another SKU's consumption or a tenancy-wide Cost Analysis total.
+The report requests the previous 30 complete UTC days from two sources, explicitly using the detected home region:
+
+1. **Cost Analysis (Usage API)** returns daily `computed-amount` grouped and filtered by subscription ID. Response rows are checked again for the exact subscription ID, currency, and completed daily intervals. Pagination is followed.
+2. **OneSubscription computed usage** provides service-level records matched by exact parent subscribed service ID and currency, using `cost-unrounded` per metered day.
+
+When exactly one service in a currency is identified as a credit pool (reported promotional, funded, service-total, consumed, available, or commitment-available amount is positive), the report can use matching Cost Analysis daily costs. This is explicitly labelled a **subscription-level estimate**, with the assumption that all reported subscription costs consume that pool. One positive pool is not proof of billing allocation. Differences between subscription costs and credit-eligible consumption can affect the estimate.
+
+Zero-valued companion service rows do not prevent that scenario. This handles PoC records whose credit balance and computed usage appear on different service lines. No SKU or subscription ID is hard-coded.
+
+When multiple credit pools exist, the script does not assign the entire subscription's cost to each pool. It falls back to exact service-level computed usage. Missing service-level data leaves the forecast unavailable. A tenancy-wide total is never assigned to a subscription or service, and currencies are never mixed.
 
 The report shows three independent scenarios:
 
@@ -128,7 +139,11 @@ These dates can differ because billing data may arrive later. The latest reporte
 
 Each scenario includes a `Days` coverage column, such as `7/7`. If a daily record is missing, the window's forecast is unavailable instead of assuming zero spend. An explicit zero-cost record is valid. This conservative rule means a genuinely idle day with no record is also unavailable. Even `7/7` proves only that each date has a record, not that OCI has finished processing every charge; values may be revised later.
 
-If the service has not existed for the full window, or net consumption is negative, that scenario is also unavailable. A usage request failure leaves the balance report visible and returns exit status `1`.
+If the service has not existed for the full window, or net consumption is negative, that scenario is also unavailable. A usage request failure leaves the balance report visible and returns exit status `1`; an alternate source can still produce explicitly labelled estimates where matching data is available.
+
+### Confirm which version is running
+
+This revision prints `Report version: 1.1` near the top. If you see the old wide forecast table, you are running an earlier version. Until you publish your updated files to GitHub, downloading from the repository's `main` URL will continue to fetch the previously published version. Upload the revised `oci_balance.py` to Cloud Shell and run `python3 ~/oci_balance.py` to test it first.
 
 For a reproducible reference date:
 
@@ -143,9 +158,9 @@ python3 oci_balance.py --as-of 2026-10-23
 - Python 3.7 or later, using only the standard library.
 - OCI CLI with the `onesubscription` commands below.
 - `OCI_TENANCY` set to the target tenancy OCID (provided by Cloud Shell).
-- An authenticated OCI CLI session and permission to read the target subscriptions and computed usage.
+- An authenticated OCI CLI session and permission to read tenancy region subscriptions, target subscriptions, and computed usage.
 
-Outside Cloud Shell, configure the OCI CLI using your preferred supported authentication method, then set `OCI_TENANCY` before running the script. The script inherits the CLI's profile, region, and authentication settings; it does not create or modify credentials.
+Outside Cloud Shell, configure the OCI CLI using your preferred supported authentication method, then set `OCI_TENANCY` before running the script. The script inherits the CLI's profile and authentication settings, and explicitly selects the discovered home region for billing calls. It does not modify your CLI configuration or create credentials.
 
 "All subscriptions" means all subscriptions returned to the current identity for the selected tenancy. It does not automatically sign in to other tenancies or enumerate every tenancy in an organization.
 
@@ -158,6 +173,7 @@ Outside Cloud Shell, configure the OCI CLI using your preferred supported authen
 | `No such command` | Check whether the installed CLI supports the documented `onesubscription` commands. |
 | Authorization error | Confirm the CLI identity and its access to the tenancy's subscription data. |
 | Download or connection error | Check network access, the configured CLI region, and service availability. |
+| `Please go to your home region to execute this operation` | Run the operation with `--region` set to the tenancy home region. The script now discovers this automatically. Start Cloud Shell in the home region if cross-region network access is restricted. |
 | A zero balance beside promotional credit | Read the individual service rows and SKUs. A standard service row can be zero while a separate promotional service row holds the credit. |
 | Empty or missing balance fields | Compare the subscription details in the Console; the script cannot display amounts the API does not return. |
 
@@ -175,6 +191,9 @@ These checks cover mixed promotional and standard service rows, production commi
 
 ## OCI APIs used
 
+Home region discovery uses [List region subscriptions](https://docs.oracle.com/en-us/iaas/tools/oci-cli/latest/oci_cli_docs/cmdref/iam/region-subscription/list.html).
+
 1. [List organization subscriptions](https://docs.oracle.com/en-us/iaas/tools/oci-cli/latest/oci_cli_docs/cmdref/onesubscription/organization-subscription/organization-subscription/list.html) to discover subscription IDs.
 2. [List subscription details](https://docs.oracle.com/en-us/iaas/tools/oci-cli/latest/oci_cli_docs/cmdref/onesubscription/subscription/subscription/list.html) with `--is-commit-info-required true` to retrieve service and commitment data.
 3. [List aggregated computed usage](https://docs.oracle.com/en-us/iaas/tools/oci-cli/latest/oci_cli_docs/cmdref/onesubscription/computed-usage/aggregated-computed-usage-summary/list-aggregated-computed-usages.html) with `--grouping DAILY` to calculate the three recent-consumption scenarios.
+4. [Request summarized usage](https://docs.oracle.com/en-us/iaas/tools/oci-cli/latest/oci_cli_docs/cmdref/usage-api/usage-summary/request-summarized-usages.html) with `--query-type COST`, `--granularity DAILY`, and subscription ID grouping/filtering for the subscription-level forecast scenario.
