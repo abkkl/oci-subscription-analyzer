@@ -2,7 +2,7 @@
 +----------------------------------------------------------------------------------------------------------------------------+
 | OCI SUBSCRIPTION AND BALANCE REPORT (Synthetic Test Tenant)                                                                |
 |                                                                                                                            |
-| Report version: 2.7 | ahmet.bakkal@oracle.com                                                                              |
+| Report version: 2.8 | ahmet.bakkal@oracle.com                                                                              |
 | Region note: Run Cloud Shell in the tenancy home region.                                                                   |
 | Home region: eu-frankfurt-1 (selected automatically for API calls)                                                         |
 |                                                                                                                            |
@@ -96,7 +96,7 @@
 |                                                                                                                            |
 | Subscriptions: 1 | Successful: 1 | Failed: 0                                                                               |
 |                                                                                                                            |
-| oci-subscription-analyzer-reports/oci-report-20261023-153219-036815.html                                                   |
+| Download: oci-subscription-analyzer-reports/oci-report-20261023-153219-036815.html                                         |
 |                                                                                                                            |
 | *END OF THE REPORT* (2026-10-23 15:32:19 UTC)                                                                              |
 +----------------------------------------------------------------------------------------------------------------------------+
