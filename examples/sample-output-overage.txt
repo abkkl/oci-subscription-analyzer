@@ -2,7 +2,7 @@ SYNTHETIC OFFLINE TEST — no live OCI connection.
 
 OCI SUBSCRIPTION AND BALANCE REPORT (Synthetic Test Tenant)
 
-Report version: 2.4 | ahmet.bakkal@oracle.com
+Report version: 2.5 | ahmet.bakkal@oracle.com
 Region note: Run Cloud Shell in the tenancy home region.
 Home region: eu-frankfurt-1 (selected automatically for API calls)
 
@@ -66,9 +66,6 @@ Days to horizon                  |        10.0 Days |        10.0 Days |        
 Coverage                         |              1/1 |              7/7 |            30/30 |            90/90
 Forecast outcome                 | Overage estimate | Overage estimate | Overage estimate | Overage estimate
 
-Missing daily records treated as zero: Previous day: 0 days | Last 7 days: 0 days | Last 30 days: 0 days | Last 90 days: 0 days.
-Averages use the full baseline window; dates before service start are also zero-filled.
-
 Consumption trend: 7-day average 200.0 EUR/day vs 90-day average 200.0 EUR/day -> 0.0% unchanged; 1.0x the 90-day average.
 
 Estimate = remaining credit - future consumption, minimum zero.
@@ -76,4 +73,4 @@ Reported usage may still be delayed or revised.
 
 Subscriptions: 1 | Successful: 1 | Failed: 0
 
-*END OF THE REPORT* (2026-10-23 14:43:34 UTC)
+*END OF THE REPORT* (2026-10-23 14:55:47 UTC)
