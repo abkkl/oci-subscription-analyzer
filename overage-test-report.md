@@ -1,4 +1,4 @@
-# Overage validation — version 2.5
+# Overage validation — version 2.6
 
 55 tests passed: 48 regression checks and 7 end-to-end scenarios. All data is synthetic. The temporary fake OCI CLI supplies responses to the real report subprocess; no live tenancy or credentials are used.
 
@@ -8,8 +8,8 @@ Reference: 2026-10-23 00:00:00 UTC. Active commitment horizon: 2026-11-02 00:00:
 
 | Metric | Expected | Actual (all four baselines) | Check |
 | --- | --- | --- | --- |
-| Remaining Credit | 1,000.0 | 1,000.0 | PASS |
-| Forecasted Consumption | 2,000.0 | 2,000.0 | PASS |
+| Remaining Credit - Total | 1,000.0 | 1,000.0 | PASS |
+| Forecasted Consumption - Total | 2,000.0 | 2,000.0 | PASS |
 | Unused/Overage Credit - Total | 1,000.0 | 1,000.0 | PASS |
 | Forecasted Consumption - Daily | 200.0 | 200.0 | PASS |
 | Required Consumption - Daily | 100.0 | 100.0 | PASS |

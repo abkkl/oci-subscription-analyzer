@@ -98,7 +98,7 @@ def forecast_cells(output):
         if "|" in line:
             parts = [cell.strip() for cell in line.split("|")]
             cells[parts[0]] = parts[1:]
-        if line.startswith("Forecast outcome"):
+        if line.lstrip().startswith("Forecast outcome"):
             break
     return cells
 
@@ -109,6 +109,9 @@ class OverageEndToEndTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(result.stderr, "")
         self.assertIn("OCI SUBSCRIPTION AND BALANCE REPORT (Synthetic Test Tenant)", result.stdout)
+        self.assertTrue(result.stdout.startswith("\nOCI SUBSCRIPTION AND BALANCE REPORT"))
+        self.assertIn("Monthly calculation: 744 hours = 31 days\n", result.stdout)
+        self.assertNotIn("Estimate = remaining credit", result.stdout)
         if forecast_cells(result.stdout):
             self.assertIn("Horizon: Active commitment end - 2026-11-02", result.stdout)
         self.assertIn("Subscriptions: 1 | Successful: 1 | Failed: 0", result.stdout)
@@ -118,7 +121,7 @@ class OverageEndToEndTests(unittest.TestCase):
     def test_all_baselines_forecast_overage(self):
         output, cells = self.check_run(fixture())
         expected = {
-            "Remaining Credit": "1,000.0", "Forecasted Consumption": "2,000.0",
+            "Remaining Credit - Total": "1,000.0", "Forecasted Consumption - Total": "2,000.0",
             "Unused/Overage Credit - Total": "1,000.0",
             "Forecasted Consumption - Daily": "200.0", "Required Consumption - Daily": "100.0",
             "Unused/Overage Credit - Daily": "100.0", "Forecasted Consumption - Monthly": "6,200.0",
@@ -133,7 +136,7 @@ class OverageEndToEndTests(unittest.TestCase):
 
     def test_mixed_baselines_keep_their_own_outcome_and_monthly_values(self):
         _, cells = self.check_run(fixture(rates=("200", "100", "50")))
-        self.assertEqual(cells["Forecasted Consumption"], ["2,000.0", "1,142.9", "650.0", "550.0"])
+        self.assertEqual(cells["Forecasted Consumption - Total"], ["2,000.0", "1,142.9", "650.0", "550.0"])
         self.assertEqual(cells["Unused/Overage Credit - Total"], ["1,000.0", "142.9", "350.0", "450.0"])
         self.assertEqual(cells["Unused/Overage Credit - Daily"], ["100.0", "14.3", "35.0", "45.0"])
         self.assertEqual(cells["Unused/Overage Credit - Monthly"], ["3,100.0", "442.9", "1,085.0", "1,395.0"])
@@ -152,7 +155,7 @@ class OverageEndToEndTests(unittest.TestCase):
 
     def test_already_reported_overage_is_not_added_to_future_overage(self):
         output, cells = self.check_run(fixture(balance="0", actual_overage="100"))
-        self.assertEqual(cells["Remaining Credit"], ["0.0"] * 4)
+        self.assertEqual(cells["Remaining Credit - Total"], ["0.0"] * 4)
         self.assertEqual(cells["Required Consumption - Daily"], ["0.0"] * 4)
         self.assertEqual(cells["Unused/Overage Credit - Total"], ["2,000.0"] * 4)
         self.assertEqual(cells["Unused/Overage Credit - Monthly"], ["6,200.0"] * 4)
@@ -166,7 +169,7 @@ class OverageEndToEndTests(unittest.TestCase):
     def test_zero_consumption_keeps_unused_credit(self):
         _, cells = self.check_run(fixture(rates=("0", "0", "0")))
         self.assertEqual(cells["Forecasted Consumption - Daily"], ["0.0"] * 4)
-        self.assertEqual(cells["Forecasted Consumption"], ["0.0"] * 4)
+        self.assertEqual(cells["Forecasted Consumption - Total"], ["0.0"] * 4)
         self.assertEqual(cells["Unused/Overage Credit - Total"], ["1,000.0"] * 4)
         self.assertEqual(cells["Forecast outcome"], ["Unused estimate"] * 4)
 

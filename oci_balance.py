@@ -404,6 +404,7 @@ def end_report():
     print()
     completed = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
     heading(f"*END OF THE REPORT* ({completed})")
+    print()
 
 
 def forecast_rows(record, daily, as_of, history_start=None):
@@ -513,13 +514,13 @@ def render_recent_forecast(service, currency, as_of, groups, usage_error=None, d
         label = (row["label"] + " (UTC)").rjust(baseline_width)
         print(f"{label}: {row['first']} - {row['last']}")
     print()
-    print("Monthly calculation: 744 hours = 31 days.")
+    print("Monthly calculation: 744 hours = 31 days")
     print()
     table(
         [f"Metric ({shown(currency)})", *[styled(row["label"], "36") for row in scenarios]],
         [
-            ["Remaining Credit", *[number(remaining) for row in scenarios]],
-            [styled("Forecasted Consumption", "36"), *[number(row["future"]) for row in scenarios]],
+            ["Remaining Credit - Total", *[number(remaining) for row in scenarios]],
+            [styled("Forecasted Consumption - Total", "36"), *[number(row["future"]) for row in scenarios]],
             ["Unused/Overage Credit - Total", *[forecast_credit(row) for row in scenarios]],
             ["Required Consumption - Daily", *[number(required) for row in scenarios]],
             [styled("Forecasted Consumption - Daily", "36"), *[number(row["rate"]) for row in scenarios]],
@@ -534,7 +535,7 @@ def render_recent_forecast(service, currency, as_of, groups, usage_error=None, d
                 else "Balanced estimate") for row in scenarios]],
         ],
         right_columns=(1, 2, 3, 4),
-        right_label_rows=tuple(range(3, 9)),
+        right_label_rows=tuple(range(12)),
         group_starts=(3, 6, 9),
     )
     reasons = {}
@@ -547,7 +548,6 @@ def render_recent_forecast(service, currency, as_of, groups, usage_error=None, d
     trend = consumption_trend(rows, currency)
     print(styled("Consumption trend:", "36") + trend[len("Consumption trend:"):])
     print()
-    print("Estimate = remaining credit - future consumption, minimum zero.")
     print("Reported usage may still be delayed or revised.")
 
 
@@ -708,9 +708,10 @@ def main(argv=None):
     if not tenancy:
         print("ERROR: OCI_TENANCY is missing. Run this script in OCI Cloud Shell.", file=sys.stderr)
         return 1
+    print()
     heading(f"OCI SUBSCRIPTION AND BALANCE REPORT ({tenancy_name(tenancy, args.region)})")
     print()
-    print("Report version: 2.5 | ahmet.bakkal@oracle.com")
+    print("Report version: 2.6 | ahmet.bakkal@oracle.com")
     print("Region note: Run Cloud Shell in the tenancy home region.")
     try:
         CLI_REGION = args.region or home_region(tenancy)

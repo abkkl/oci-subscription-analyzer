@@ -55,12 +55,12 @@ The horizon is the **unique active commitment's end**, or the service contract e
 
 Let `B` = remaining credit, `R` = baseline daily consumption and `D` = fractional days to the forecast horizon:
 
-Subscription headings and separators match the Last 7 days forecast: unused yellow, overage red, balanced green. With multiple pools, any 7-day overage takes priority; unavailable forecasts retain yellow. `Baseline` is uncolored; a blank line precedes the monthly calculation note. Baseline column headings and the three baseline-dependent metric labels (Forecasted Consumption, Forecasted Consumption - Daily/Monthly) are cyan. Only the `Consumption trend:` prefix is cyan, matching Forecasted Consumption; the rest of its text stays uncolored. Baseline date columns and the ends of Daily/Monthly metric labels are aligned. The table header includes currency. Columns are Previous day, Last 7 days, Last 30 days and Last 90 days. Rows are divided into four groups:
+Subscription headings and separators match the Last 7 days forecast: unused yellow, overage red, balanced green. With multiple pools, any 7-day overage takes priority; unavailable forecasts retain yellow. `Baseline` is uncolored; a blank line precedes the monthly calculation note. Baseline column headings and the three baseline-dependent metric labels (Forecasted Consumption - Total, Forecasted Consumption - Daily/Monthly) are cyan. Only the `Consumption trend:` prefix is cyan, matching Forecasted Consumption; the rest of its text stays uncolored. Baseline date columns and all metric-label ends are aligned. Blank lines surround the report, including after the end marker. The table header includes currency. Columns are Previous day, Last 7 days, Last 30 days and Last 90 days. Rows are divided into four groups:
 
 | Group | Metric | Meaning |
 | --- | --- | --- |
-| Credit totals | Remaining Credit | `B`, the service or selected commitment balance. |
-| | Forecasted Consumption | `R × D`. |
+| Credit totals | Remaining Credit - Total | `B`, the service or selected commitment balance. |
+| | Forecasted Consumption - Total | `R × D`. |
 | | Unused/Overage Credit - Total | Unused = `max(0, B − R × D)`; overage = `max(0, R × D − B)`. |
 | Daily | Required Consumption - Daily | `B / D`, needed to use credit by the horizon. |
 | | Forecasted Consumption - Daily | `R` = sum of reported daily costs / number of reported days within the baseline. |
@@ -111,13 +111,13 @@ Previous day (UTC): 2026-10-22 - 2026-10-22
 Last 30 days (UTC): 2026-09-23 - 2026-10-22
 Last 90 days (UTC): 2026-07-25 - 2026-10-22
 
-Monthly calculation: 744 hours = 31 days.
+Monthly calculation: 744 hours = 31 days
 
 Metric (EUR)                     | Previous day     | Last 7 days      | Last 30 days    | Last 90 days
 ---------------------------------+------------------+------------------+-----------------+----------------
-Remaining Credit                 |          1,000.0 |          1,000.0 |         1,000.0 |         1,000.0
-Forecasted Consumption           |          2,000.0 |          1,142.9 |           650.0 |           550.0
-Unused/Overage Credit - Total    |          1,000.0 |            142.9 |           350.0 |           450.0
+        Remaining Credit - Total |          1,000.0 |          1,000.0 |         1,000.0 |         1,000.0
+  Forecasted Consumption - Total |          2,000.0 |          1,142.9 |           650.0 |           550.0
+   Unused/Overage Credit - Total |          1,000.0 |            142.9 |           350.0 |           450.0
 ---------------------------------+------------------+------------------+-----------------+----------------
     Required Consumption - Daily |            100.0 |            100.0 |           100.0 |           100.0
   Forecasted Consumption - Daily |            200.0 |            114.3 |            65.0 |            55.0
@@ -127,9 +127,9 @@ Unused/Overage Credit - Total    |          1,000.0 |            142.9 |        
 Forecasted Consumption - Monthly |          6,200.0 |          3,542.9 |         2,015.0 |         1,705.0
  Unused/Overage Credit - Monthly |          3,100.0 |            442.9 |         1,085.0 |         1,395.0
 ---------------------------------+------------------+------------------+-----------------+----------------
-Days to horizon                  |        10.0 Days |        10.0 Days |       10.0 Days |       10.0 Days
-Coverage                         |              1/1 |              7/7 |           30/30 |           90/90
-Forecast outcome                 | Overage estimate | Overage estimate | Unused estimate | Unused estimate
+                 Days to horizon |        10.0 Days |        10.0 Days |       10.0 Days |       10.0 Days
+                        Coverage |              1/1 |              7/7 |           30/30 |           90/90
+                Forecast outcome | Overage estimate | Overage estimate | Unused estimate | Unused estimate
 
 Consumption trend: 7-day average 114.3 EUR/day vs 90-day average 55.0 EUR/day -> 107.8% higher; 2.1x the 90-day average.
 ```
@@ -154,4 +154,4 @@ The suite includes seven end-to-end scenarios using a temporary fake OCI CLI: ov
 
 See [overage test report](overage-test-report.md), [full overage output](examples/sample-output-overage.txt) and [exhausted-credit output](examples/sample-output-exhausted.txt).
 
-Version **2.5** · ahmet.bakkal@oracle.com
+Version **2.6** · ahmet.bakkal@oracle.com
