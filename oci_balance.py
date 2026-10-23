@@ -340,6 +340,38 @@ def commitment_state(commitment, as_of):
     return "active", max(0, (end.date() - as_of.astimezone(timezone.utc).date()).days)
 
 
+def credit_label(label, kind=None):
+    kind = kind or label
+    color = "33" if kind.startswith("Unused") else "31" if kind.startswith("Overage") else None
+    enabled = sys.stdout.isatty() and "NO_COLOR" not in os.environ and os.environ.get("TERM") != "dumb"
+    return f"\033[1;{color}m{label}\033[0m" if enabled and color else label
+
+
+def forecast_credit(row, days=None):
+    if row["reason"] or row["unused"] is None or row["beyond"] is None:
+        return "—"
+    kind, amount = ("Overage", row["beyond"]) if row["beyond"] > 0 else ("Unused", row["unused"])
+    if amount == 0:
+        return "0.0"
+    return credit_label(number(amount / days if days is not None else amount), kind=kind)
+
+
+def commitment_credit(commitment, as_of):
+    state, _ = commitment_state(commitment, as_of)
+    if state in ("future", "—"):
+        return "--"
+    available = decimal_value(commitment.get("available-amount"))
+    used = decimal_value(commitment.get("used-amount"))
+    net = decimal_value(commitment.get("line-net-amount"))
+    funded = decimal_value(commitment.get("funded-allocation-value"))
+    if ((available is not None and available < 0) or
+            (used is not None and net is not None and 0 <= net < used and funded in (None, Decimal(0), net))):
+        return credit_label("Overage credit")
+    if available is not None and available > 0:
+        return credit_label("Unused credit")
+    return "--"
+
+
 def is_historical(service, as_of):
     end = timestamp(service.get("time-end"))
     return service.get("status") == "EXPIRED" or (end is not None and end <= as_of)
@@ -447,7 +479,9 @@ def render_recent_forecast(service, currency, as_of, groups, usage_error=None, d
         print(f"Forecast unavailable ({shown(currency)}): {reason}.")
         return
     print()
-    heading(f"FORECAST ({shown(currency)}) | Horizon: {scope} - {date(target.get('time-end'))}")
+    countdown = contract_countdown(target.get("time-end"), as_of).split(" | ", 1)[-1]
+    countdown = countdown.replace(" (", "; ").rstrip(")")
+    heading(f"FORECAST ({shown(currency)}) | Horizon: {scope} - {date(target.get('time-end'))} ({countdown})")
     print()
     print(f"Balance snapshot UTC: {as_of.strftime('%Y-%m-%d %H:%M:%S')}")
     print(f"Latest reported completed usage day (UTC): {latest}")
@@ -461,22 +495,32 @@ def render_recent_forecast(service, currency, as_of, groups, usage_error=None, d
     scenarios = list(reversed(rows))
     for row in scenarios:
         print(f"{row['label']} (UTC): {row['first']} - {row['last']}")
+    print("Monthly calculation: 744 hours = 31 days.")
+    outcomes = []
+    for row in scenarios:
+        outcome = ("Unavailable" if row["reason"] else "Overage credit" if row["beyond"] > 0
+                   else "Unused credit" if row["unused"] > 0 else "Balanced")
+        outcomes.append(f"{row['label']}: {credit_label(outcome)}")
+    print("Forecast outcome: " + " | ".join(outcomes))
     print()
     table(
-        ["Metric", *[row["label"] for row in scenarios]],
+        [f"Metric ({shown(currency)})", *[row["label"] for row in scenarios]],
         [
             ["Avg/day Consumption", *[number(row["rate"]) for row in scenarios]],
+            ["Unused/Overage Credit - Daily", *[forecast_credit(row, horizon_days) for row in scenarios]],
             ["Required/day Consumption", *[number(required) for row in scenarios]],
+            ["Required/month Consumption", *[number(required * Decimal(744) / Decimal(24)) if required is not None else "—" for row in scenarios]],
             ["Remaining Credit", *[number(remaining) for row in scenarios]],
             ["Future Consumption", *[number(row["future"]) for row in scenarios]],
-            ["Unused Credit at End - Total", *[number(row["unused"]) for row in scenarios]],
-            ["Unused Credit at End - Daily", *[number(row["unused"] / horizon_days) if row["unused"] is not None else "—" for row in scenarios]],
-            ["Overage Credit at End", *[number(row["beyond"]) for row in scenarios]],
-            ["Days to horizon", *[number(horizon_days) for row in scenarios]],
+            ["Unused/Overage Credit - Total", *[forecast_credit(row) for row in scenarios]],
+            ["Days to horizon", *[f"{number(horizon_days)} Days" for row in scenarios]],
             ["Coverage", *[row["coverage"] for row in scenarios]],
-            ["Result", *["N/A" if row["reason"] else "Estimate" for row in scenarios]],
+            ["Result", *["N/A" if row["reason"] else credit_label(
+                "Overage estimate" if row["beyond"] > 0 else "Unused estimate" if row["unused"] > 0
+                else "Balanced estimate") for row in scenarios]],
         ],
         right_columns=(1, 2, 3),
+        group_starts=(4, 7),
     )
     reasons = {}
     for row in rows:
@@ -492,16 +536,23 @@ def render_recent_forecast(service, currency, as_of, groups, usage_error=None, d
     print("Reported usage may still be delayed or revised.")
 
 
-def table(headers, rows, right_columns=()):
-    widths = [max(len(str(row[i])) for row in [headers, *rows]) for i in range(len(headers))]
+def table(headers, rows, right_columns=(), group_starts=()):
+    def plain(value):
+        return re.sub(r"\x1b\[[0-9;]*m", "", str(value))
+    widths = [max(len(plain(row[i])) for row in [headers, *rows]) for i in range(len(headers))]
     numeric_columns = [i in right_columns or all(str(row[i]) == "—" or re.fullmatch(r"-?[\d,]+(?:\.\d)?\*?", str(row[i])) for row in rows)
                        for i in range(len(headers))]
     def line(row, is_header=False):
-        return " | ".join(str(cell).rjust(widths[i]) if numeric_columns[i] and not is_header
-                          else str(cell).ljust(widths[i]) for i, cell in enumerate(row)).rstrip()
+        cells = []
+        for i, cell in enumerate(row):
+            padding = " " * (widths[i] - len(plain(cell)))
+            cells.append(padding + str(cell) if numeric_columns[i] and not is_header else str(cell) + padding)
+        return " | ".join(cells).rstrip()
     print(line(headers, True))
     print("-+-".join("-" * width for width in widths))
-    for row in rows:
+    for index, row in enumerate(rows):
+        if index in group_starts:
+            print("-+-".join("-" * width for width in widths))
         print(line(row))
 
 
@@ -578,8 +629,8 @@ def render(subscription_id, summaries, as_of=None, usage=None, usage_error=None,
             print(f"\nCommitment periods: {len(commitments)}")
             if commitments:
                 table(
-                    ["Status", "Start UTC", "End UTC", "Quantity", "Net amount", "Funded", "Consumed", "Remaining", "Remaining days"],
-                    [[commitment_state(c, as_of)[0], date(c.get("time-start")), date(c.get("time-end")),
+                    ["Status", "Credit status", "Start UTC", "End UTC", "Quantity", "Net amount", "Funded", "Consumed", "Remaining", "Remaining days"],
+                    [[commitment_state(c, as_of)[0], commitment_credit(c, as_of), date(c.get("time-start")), date(c.get("time-end")),
                       *[number(c.get(key)) for key in ("quantity", "line-net-amount", "funded-allocation-value")],
                       commitment_consumed(c, as_of), number(c.get("available-amount")), commitment_state(c, as_of)[1]]
                      for c in commitments],
@@ -623,7 +674,7 @@ def main(argv=None):
         return 1
     heading(f"OCI SUBSCRIPTION AND BALANCE REPORT ({tenancy_name(tenancy, args.region)})")
     print()
-    print("Report version: 1.9 | ahmet.bakkal@oracle.com")
+    print("Report version: 2.0 | ahmet.bakkal@oracle.com")
     print("Region note: Run Cloud Shell in the tenancy home region.")
     try:
         CLI_REGION = args.region or home_region(tenancy)

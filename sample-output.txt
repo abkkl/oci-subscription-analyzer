@@ -1,6 +1,6 @@
 OCI SUBSCRIPTION AND BALANCE REPORT (Example Tenant)
 
-Report version: 1.9 | ahmet.bakkal@oracle.com
+Report version: 2.0 | ahmet.bakkal@oracle.com
 Region note: Run Cloud Shell in the tenancy home region.
 Home region: eu-frankfurt-1 (selected automatically for API calls)
 
@@ -27,14 +27,14 @@ Promo credit | Service total | Funded | Consumed  | Remaining | Overage (records
 Overage audit (UTC): 2026-09-23 - 2026-10-22 | Usage dates returned: 30/719 | OVERAGE records: 0. Amounts cover returned records only; full contract coverage is unverified.
 
 Commitment periods: 3
-Status | Start UTC  | End UTC    | Quantity | Net amount | Funded | Consumed  | Remaining | Remaining days
--------+------------+------------+----------+------------+--------+-----------+-----------+---------------
-past   | 2024-11-04 | 2025-11-03 | 90,000.0 |   90,000.0 |      — |         — |       0.0 |              0
-active | 2025-11-04 | 2026-11-03 | 90,000.0 |   90,000.0 |      — | 60,000.0* |  30,000.0 |             11
-future | 2026-11-04 | 2027-11-03 | 90,000.0 |   90,000.0 |      — |         — |  90,000.0 |            365
+Status | Credit status | Start UTC  | End UTC    | Quantity | Net amount | Funded | Consumed  | Remaining | Remaining days
+-------+---------------+------------+------------+----------+------------+--------+-----------+-----------+---------------
+past   | --            | 2024-11-04 | 2025-11-03 | 90,000.0 |   90,000.0 |      — |         — |       0.0 |              0
+active | Unused credit | 2025-11-04 | 2026-11-03 | 90,000.0 |   90,000.0 |      — | 60,000.0* |  30,000.0 |             11
+future | --            | 2026-11-04 | 2027-11-03 | 90,000.0 |   90,000.0 |      — |         — |  90,000.0 |            365
 * Balance-based estimate: net amount minus remaining; may include adjustments.
 
-FORECAST (TRY) | Horizon: Active commitment end - 2026-11-03
+FORECAST (TRY) | Horizon: Active commitment end - 2026-11-03 (11 days remaining; 11 days total)
 
 Balance snapshot UTC: 2026-10-23 12:00:00
 Latest reported completed usage day (UTC): 2026-10-22
@@ -43,21 +43,25 @@ Future renewals and credit rollover are not forecast.
 Previous day (UTC): 2026-10-22 - 2026-10-22
 Last 7 days (UTC): 2026-10-16 - 2026-10-22
 Last 30 days (UTC): 2026-09-23 - 2026-10-22
+Monthly calculation: 744 hours = 31 days.
+Forecast outcome: Previous day: Overage credit | Last 7 days: Unused credit | Last 30 days: Unused credit
 
-Metric                       | Previous day | Last 7 days | Last 30 days
------------------------------+--------------+-------------+-------------
-Avg/day Consumption          |      1,200.0 |     1,028.6 |        470.0
-Required/day Consumption     |      2,608.7 |     2,608.7 |      2,608.7
-Remaining Credit             |     30,000.0 |    30,000.0 |     30,000.0
-Future Consumption           |     13,800.0 |    11,828.6 |      5,405.0
-Unused Credit at End - Total |     16,200.0 |    18,171.4 |     24,595.0
-Unused Credit at End - Daily |      1,408.7 |     1,580.1 |      2,138.7
-Overage Credit at End        |          0.0 |         0.0 |          0.0
-Days to horizon              |         11.5 |        11.5 |         11.5
-Coverage                     |          1/1 |         7/7 |        30/30
-Result                       |     Estimate |    Estimate |     Estimate
+Metric (TRY)                  | Previous day     | Last 7 days     | Last 30 days
+------------------------------+------------------+-----------------+----------------
+Avg/day Consumption           |          3,000.0 |         1,285.7 |           530.0
+Unused/Overage Credit - Daily |            391.3 |         1,323.0 |         2,078.7
+Required/day Consumption      |          2,608.7 |         2,608.7 |         2,608.7
+Required/month Consumption    |         80,869.6 |        80,869.6 |        80,869.6
+------------------------------+------------------+-----------------+----------------
+Remaining Credit              |         30,000.0 |        30,000.0 |        30,000.0
+Future Consumption            |         34,500.0 |        14,785.7 |         6,095.0
+Unused/Overage Credit - Total |          4,500.0 |        15,214.3 |        23,905.0
+------------------------------+------------------+-----------------+----------------
+Days to horizon               |        11.5 Days |       11.5 Days |       11.5 Days
+Coverage                      |              1/1 |             7/7 |           30/30
+Result                        | Overage estimate | Unused estimate | Unused estimate
 
-Comment: Consumption trend: 7-day average 1,028.6 TRY/day vs 30-day average 470.0 TRY/day -> 118.8% higher; 2.2x the 30-day average.
+Comment: Consumption trend: 7-day average 1,285.7 TRY/day vs 30-day average 530.0 TRY/day -> 142.6% higher; 2.4x the 30-day average.
 
 Estimate = remaining credit - future consumption, minimum zero.
 Missing days are not treated as zero.

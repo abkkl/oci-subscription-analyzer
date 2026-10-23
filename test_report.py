@@ -308,14 +308,14 @@ class ForecastTests(unittest.TestCase):
         stop = next(i for i in range(start, len(lines)) if lines[i].startswith("Result"))
         block = lines[start:stop + 1]
         self.assertEqual([c.strip() for c in block[0].split("|")],
-                         ["Metric", "Previous day", "Last 7 days", "Last 30 days"])
-        self.assertEqual([line.split("|")[0].strip() for line in block[2:]], [
-            "Avg/day Consumption", "Required/day Consumption", "Remaining Credit", "Future Consumption",
-            "Unused Credit at End - Total", "Unused Credit at End - Daily", "Overage Credit at End",
+                         ["Metric (EUR)", "Previous day", "Last 7 days", "Last 30 days"])
+        self.assertEqual([line.split("|")[0].strip() for line in block[2:] if "|" in line], [
+            "Avg/day Consumption", "Unused/Overage Credit - Daily", "Required/day Consumption", "Required/month Consumption",
+            "Remaining Credit", "Future Consumption", "Unused/Overage Credit - Total",
             "Days to horizon", "Coverage", "Result"])
         self.assertEqual([c.strip() for c in block[2].split("|")][1:], ["100.0", "31.4", "15.0"])
-        self.assertEqual([c.strip() for c in block[-1].split("|")][1:], ["Estimate"] * 3)
-        self.assertTrue(all(len(line) <= 80 for line in block))
+        self.assertEqual([c.strip() for c in block[-1].split("|")][1:], ["Unused estimate"] * 3)
+        self.assertTrue(all(len(line) <= 90 for line in block))
 
     def test_missing_previous_day_is_not_zero_consumption(self):
         del self.daily[(self.now - timedelta(days=1)).date()]
@@ -361,10 +361,10 @@ class ForecastTests(unittest.TestCase):
         with contextlib.redirect_stdout(output):
             report.render_recent_forecast(service_record, "EUR", self.now, [], daily_override=self.daily)
         self.assertIn("FORECAST (EUR) | Horizon: Active commitment end - 2026-11-01", output.getvalue())
-        self.assertIn("Overage Credit at End", output.getvalue())
+        self.assertIn("Unused/Overage Credit - Total", output.getvalue())
         self.assertIn("Days to horizon", output.getvalue())
         forecast_lines = [line for line in output.getvalue().splitlines() if line.startswith("Days to horizon")]
-        self.assertEqual(forecast_lines[0].split("|")[-1].strip(), "9.0")
+        self.assertEqual(forecast_lines[0].split("|")[-1].strip(), "9.0 Days")
 
     def test_daily_values_share_the_fractional_commitment_horizon(self):
         record = dict(self.record, **{"time-end": "2028-11-03T23:59:59Z", "commitment-services": [
@@ -376,12 +376,55 @@ class ForecastTests(unittest.TestCase):
             report.render_recent_forecast(record, "TRY", now, [], daily_override=daily)
         lines = output.getvalue().splitlines()
         cells = {line.split("|")[0].strip(): line.split("|")[-1].strip() for line in lines if "|" in line}
-        self.assertEqual(cells["Days to horizon"], "0.5")
+        self.assertEqual(cells["Days to horizon"], "0.5 Days")
         self.assertEqual(cells["Required/day Consumption"], "200.0")
+        self.assertEqual(cells["Required/month Consumption"], "6,200.0")
+        self.assertIn("Monthly calculation: 744 hours = 31 days.", output.getvalue())
         self.assertEqual(cells["Future Consumption"], "5.0")
-        self.assertEqual(cells["Unused Credit at End - Total"], "95.0")
-        self.assertEqual(cells["Unused Credit at End - Daily"], "190.0")
+        self.assertEqual(cells["Unused/Overage Credit - Total"], "95.0")
+        self.assertEqual(cells["Unused/Overage Credit - Daily"], "190.0")
         self.assertNotIn("Contract days left", output.getvalue())
+
+    def test_mixed_forecast_marks_unused_and_overage_per_scenario(self):
+        daily = dict(self.daily)
+        daily[(self.now - timedelta(days=1)).date()] = Decimal(2000)
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            report.render_recent_forecast(self.record, "EUR", self.now, [], daily_override=daily)
+        text = output.getvalue()
+        self.assertIn("Previous day: Overage credit | Last 7 days: Unused credit | Last 30 days: Unused credit", text)
+        daily_line = next(line for line in text.splitlines() if line.startswith("Unused/Overage Credit - Daily"))
+        total_line = next(line for line in text.splitlines() if line.startswith("Unused/Overage Credit - Total"))
+        self.assertEqual(daily_line.split("|")[1].strip(), "1,000.0")
+        self.assertEqual(total_line.split("|")[1].strip(), "10,000.0")
+        result_line = next(line for line in text.splitlines() if line.startswith("Result"))
+        self.assertEqual([cell.strip() for cell in result_line.split("|")[1:]],
+                         ["Overage estimate", "Unused estimate", "Unused estimate"])
+        self.assertIn("(10 days remaining; 10 days total)", text)
+        self.assertNotIn("0 years", text)
+
+    def test_colored_forecast_preserves_visible_table_alignment(self):
+        plain = io.StringIO()
+        colored = io.StringIO()
+        with contextlib.redirect_stdout(plain):
+            report.render_recent_forecast(self.record, "EUR", self.now, [], daily_override=self.daily)
+        with patch.object(colored, "isatty", return_value=True), patch.dict(os.environ, {"TERM": "xterm"}), \
+                contextlib.redirect_stdout(colored):
+            with patch.dict(os.environ):
+                os.environ.pop("NO_COLOR", None)
+                report.render_recent_forecast(self.record, "EUR", self.now, [], daily_override=self.daily)
+        import re
+        self.assertIn("\033[1;33mUnused", colored.getvalue())
+        self.assertEqual(re.sub(r"\x1b\[[0-9;]*m", "", colored.getvalue()), plain.getvalue())
+
+    def test_commitment_credit_state_does_not_guess_expired_or_future_consumption(self):
+        period = {"time-start": "2026-01-01T00:00:00Z", "time-end": "2026-12-31T23:59:59Z",
+                  "line-net-amount": "100", "available-amount": "20"}
+        self.assertEqual(report.commitment_credit(period, self.now), "Unused credit")
+        self.assertEqual(report.commitment_credit(dict(period, **{"available-amount": "-10"}), self.now), "Overage credit")
+        self.assertEqual(report.commitment_credit(dict(period, **{"available-amount": "0", "used-amount": "110"}), self.now), "Overage credit")
+        self.assertEqual(report.commitment_credit(dict(period, **{"time-start": "2026-12-01T00:00:00Z"}), self.now), "--")
+        self.assertEqual(report.commitment_credit(dict(period, **{"time-end": "2026-01-01T00:00:00Z", "available-amount": "0"}), self.now), "--")
 
     def test_trend_comment_handles_increase_decrease_zero_and_missing_data(self):
         def comment(month, week):
@@ -406,7 +449,7 @@ class ForecastTests(unittest.TestCase):
                                           daily_override={yesterday: Decimal(10)})
         self.assertIn("Metric", output.getvalue())
         self.assertIn("Previous day", output.getvalue())
-        self.assertIn("Estimate", output.getvalue())
+        self.assertIn("Unused estimate", output.getvalue())
         self.assertNotIn("Forecast unavailable", output.getvalue())
 
     def test_main_requests_daily_usage_and_keeps_balance_on_usage_failure(self):
@@ -476,7 +519,7 @@ class CostAnalysisTests(unittest.TestCase):
         self.assertNotIn("Source:", text)
         self.assertNotIn("Scope:", text)
         self.assertNotIn("Assumption:", text)
-        self.assertIn("FORECAST (TRY) | Horizon: Service contract end - 2026-11-02\n\nBalance snapshot", text)
+        self.assertIn("FORECAST (TRY) | Horizon: Service contract end - 2026-11-02 (10 days remaining; 10 days total)\n\nBalance snapshot", text)
         self.assertEqual(text.count("FORECAST (TRY) | Horizon:"), 1)
         self.assertEqual(sum(line.startswith("Metric") for line in text.splitlines()), 1)
         self.assertIn("Last 30 days (UTC): 2026-09-23 - 2026-10-22", text)
@@ -485,8 +528,8 @@ class CostAnalysisTests(unittest.TestCase):
         cells = {line.split("|")[0].strip(): line.split("|")[-1].strip() for line in text.splitlines() if "|" in line}
         self.assertEqual(cells["Future Consumption"], "100.0")
         self.assertEqual(cells["Remaining Credit"], "9,000.0")
-        self.assertEqual(cells["Unused Credit at End - Total"], "8,900.0")
-        self.assertEqual(cells["Unused Credit at End - Daily"], "890.0")
+        self.assertEqual(cells["Unused/Overage Credit - Total"], "8,900.0")
+        self.assertEqual(cells["Unused/Overage Credit - Daily"], "890.0")
         self.assertNotIn("SERVICE 2", text)
         self.assertIn("STANDARD — Example credits omitted", text)
 
