@@ -16,13 +16,13 @@ REFERENCE = datetime(2026, 10, 23, tzinfo=timezone.utc)
 
 
 def fixture(balance="1000", rates=("200", "200", "200"), actual_overage="0", missing_day=False):
-    """rates are two-days-ago, the other six recent days and preceding 83 days."""
+    """rates are selected recent peak, the other six recent days and preceding 83 days."""
     daily, costs = [], []
     total = 0
     for offset in range(1, 91):
-        if missing_day and offset == 2:
+        if missing_day and offset == 1:
             continue
-        cost = rates[0] if offset == 2 else rates[1] if offset <= 7 else rates[2]
+        cost = rates[0] if offset == 1 else rates[1] if offset <= 7 else rates[2]
         start = REFERENCE - timedelta(days=offset)
         costs.append({"subscription-id": "SYNTHETIC-SUBSCRIPTION", "currency": "EUR",
                       "computed-amount": cost, "time-usage-started": start.isoformat(),
@@ -73,7 +73,7 @@ print(json.dumps(response))
 '''
 
 
-def run_report(data):
+def run_report(data, options=()):
     with tempfile.TemporaryDirectory(prefix="oci-overage-test-") as folder:
         root = Path(folder)
         command = root / "oci"
@@ -85,7 +85,7 @@ def run_report(data):
                    OCI_TEST_FIXTURE=str(source), OCI_TENANCY="ocid1.tenancy.oc1..synthetic",
                    NO_COLOR="1")
         result = subprocess.run([sys.executable, str(Path(__file__).with_name("oci_balance.py")),
-                                 "--as-of", "2026-10-23", "--output-dir", str(root / "reports")], env=env, capture_output=True, text=True)
+                                 "--as-of", "2026-10-23", "--output-dir", str(root / "reports"), *options], env=env, capture_output=True, text=True)
         exports = list((root / "reports").glob("*.html"))
         result.html_report = exports[0].read_text() if exports else None
     return result
@@ -180,9 +180,9 @@ class OverageEndToEndTests(unittest.TestCase):
 
     def test_missing_day_is_excluded_from_average_denominators(self):
         output, cells = self.check_run(fixture(missing_day=True))
-        self.assertEqual(cells["Coverage"], ["0/1", "6/7", "29/30", "89/90"])
-        self.assertEqual(cells["Forecasted Consumption - Daily"], ["—", "200.0", "200.0", "200.0"])
-        self.assertEqual(cells["Forecast outcome"], ["N/A", "Overage estimate", "Overage estimate", "Overage estimate"])
+        self.assertEqual(cells["Coverage"], ["1/1", "7/7", "30/30", "89/90"])
+        self.assertEqual(cells["Forecasted Consumption - Daily"], ["200.0"] * 4)
+        self.assertEqual(cells["Forecast outcome"], ["Overage estimate"] * 4)
         self.assertNotIn("Missing daily records", output)
         self.assertNotIn("zero-filled", output)
 

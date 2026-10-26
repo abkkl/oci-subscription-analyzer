@@ -20,6 +20,7 @@ from decimal import Decimal, InvalidOperation
 from datetime import datetime, timedelta, timezone
 
 CLI_REGION = None
+USAGE_DELAY_HOURS = 0
 SGR = re.compile(r"\x1b\[([0-9;]*)m")
 
 
@@ -138,12 +139,12 @@ def ansi_wrapped_lines(value, width):
 def boxed_report(transcript):
     widths = table_widths(transcript)
     width = max(widths) if widths else max(20, min(100, shutil.get_terminal_size((80, 24)).columns - 4))
-    # Keep the copy/paste download code on a single physical line.
-    paths = [len(line) for line in SGR.sub("", transcript).splitlines() if line.endswith(".html")]
-    width = max([width, *paths])
+    width = min(width, max(1, shutil.get_terminal_size((80, 24)).columns - 4))
     border = "+" + "-" * (width + 2) + "+"
     lines = ["", border]
     for source in transcript.strip("\n").splitlines():
+        if re.fullmatch(r"=+", SGR.sub("", source)):
+            source = re.sub(r"=+", "=" * width, source)
         for line in ansi_wrapped_lines(source, width):
             padding = " " * (width - len(SGR.sub("", line)))
             lines.append("| " + line + padding + " |")
@@ -316,7 +317,7 @@ def daily_usage(groups, service_id, currency, cutoff):
             metered = timestamp(row.get("time-metered-on"))
             if metered is None:
                 raise ValueError("A matching usage record has no valid metered date.")
-            if metered >= cutoff or metered < cutoff - timedelta(days=90):
+            if metered >= cutoff or metered < cutoff - timedelta(days=95 + math.ceil(USAGE_DELAY_HOURS / 24)):
                 continue
             cost = decimal_value(row.get("cost-unrounded"))
             if cost is None:
@@ -332,7 +333,7 @@ def fetch_cost_usage(tenancy, subscription_id, cutoff):
     while True:
         args = ["usage-api", "usage-summary", "request-summarized-usages",
                 "--tenant-id", tenancy, "--granularity", "DAILY", "--query-type", "COST",
-                "--time-usage-started", (cutoff - timedelta(days=90)).isoformat(),
+                "--time-usage-started", (cutoff - timedelta(days=95 + math.ceil(USAGE_DELAY_HOURS / 24))).isoformat(),
                 "--time-usage-ended", cutoff.isoformat(), "--group-by", '["subscriptionId"]',
                 "--filter", json.dumps({"operator": "AND", "dimensions": [
                     {"key": "subscriptionId", "value": str(subscription_id)}]}),
@@ -363,7 +364,7 @@ def subscription_daily_usage(rows, subscription_id, currency, cutoff):
         end = timestamp(row.get("time-usage-ended"))
         if start is None or end is None:
             raise ValueError("Cost Analysis returned a matching record without valid dates.")
-        if start < cutoff - timedelta(days=90) or end > cutoff or start >= cutoff:
+        if start < cutoff - timedelta(days=95 + math.ceil(USAGE_DELAY_HOURS / 24)) or end > cutoff or start >= cutoff:
             continue
         if start.time() != datetime.min.time() or end - start != timedelta(days=1):
             raise ValueError("Cost Analysis returned a non-daily usage interval.")
@@ -555,26 +556,46 @@ def end_report():
     print(report_footer(), end="")
 
 
+def baseline_selection(daily, as_of, history_start=None):
+    """Select by recent maximum or by elapsed hours since a UTC day's end."""
+    today = as_of.date()
+    recent = [today - timedelta(days=i) for i in range(5)]
+    eligible = [day for day in recent if day in daily and
+                (history_start is None or day >= history_start.date())]
+    if USAGE_DELAY_HOURS:
+        boundary = (as_of - timedelta(hours=USAGE_DELAY_HOURS)).replace(
+            hour=0, minute=0, second=0, microsecond=0)
+        selected = boundary.date() - timedelta(days=1)
+        reason = (f"--usage-delay-hours {USAGE_DELAY_HOURS}: latest UTC day whose end "
+                  f"is at least {USAGE_DELAY_HOURS} hours before the balance snapshot")
+    else:
+        selected = max(eligible, key=lambda day: (daily[day], day)) if eligible else None
+        reason = ("--usage-delay-hours 0: highest reported consumption in the last 5 UTC days "
+                  "including today; ties use the newest date")
+    return selected, recent, reason
+
+
 def forecast_rows(record, daily, as_of, history_start=None):
-    """Use 90/30/7 completed-day windows and one UTC day from two days ago."""
+    """End every baseline on the same explicitly selected UTC date."""
     start = timestamp(record.get("time-start"))
     history_start = history_start or start
     end = timestamp(record.get("time-end"))
     available = decimal_value(record.get("available-amount"))
-    cutoff = as_of.replace(hour=0, minute=0, second=0, microsecond=0)
+    selected, recent, selection_reason = baseline_selection(daily, as_of, history_start)
+    cutoff = datetime.combine(selected + timedelta(days=1), datetime.min.time()).replace(tzinfo=timezone.utc) if selected else as_of.replace(hour=0, minute=0, second=0, microsecond=0)
     horizon_error = None
     if start is None or end is None or not start <= as_of < end:
         horizon_error = "No active finite forecast period"
     elif available is None or available < 0:
         horizon_error = "Missing/non-negative balance required"
     result = []
-    for days, label in ((90, "Last 90 days"), (30, "Last 30 days"), (7, "Last 7 days"), (1, "Two days ago")):
-        first = cutoff - timedelta(days=2 if label == "Two days ago" else days)
+    for days, label in ((90, "Last 90 days"), (30, "Last 30 days"), (7, "Last 7 days"), (1, "Selected day")):
+        first = cutoff - timedelta(days=days)
         dates = [(first + timedelta(days=i)).date() for i in range(days)]
         reported = [day for day in dates if day in daily and
                     (history_start is None or day >= history_start.date())]
         covered = len(reported)
-        reason = horizon_error
+        reason = horizon_error or ("No reported consumption in the last 5 UTC days" if selected is None else None)
         total = sum((daily[day] for day in reported), Decimal(0))
         if covered == 0 and reason is None:
             reason = "No reported daily usage records"
@@ -589,13 +610,14 @@ def forecast_rows(record, daily, as_of, history_start=None):
             beyond = max(Decimal(0), extra - available)
         result.append({"label": label, "first": first.date(), "last": dates[-1],
                        "coverage": f"{covered}/{days}", "rate": rate,
-                       "missing": days - covered,
+                       "missing": days - covered, "selected": selected, "recent": recent,
+                       "daily": daily, "selection_reason": selection_reason,
                        "unused": unused, "beyond": beyond, "future": extra, "reason": reason})
     return result
 
 
 def forecast_inputs(service, currency, as_of, groups, usage_error=None, daily_override=None):
-    cutoff = as_of.replace(hour=0, minute=0, second=0, microsecond=0)
+    cutoff = as_of.replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=1)
     try:
         if daily_override is not None:
             daily = daily_override
@@ -606,7 +628,8 @@ def forecast_inputs(service, currency, as_of, groups, usage_error=None, daily_ov
             daily = daily_usage(groups or [], service.get("id"), currency, cutoff)
     except ValueError as exc:
         daily, usage_error = {}, str(exc)
-    latest = max(daily).isoformat() if daily else "No matching usage returned"
+    completed = [day for day in daily if day < as_of.date()]
+    latest = max(completed).isoformat() if completed else "No matching usage returned"
     target = service
     scope = "Service contract end"
     commitments = service.get("commitment-services") or []
@@ -634,6 +657,18 @@ def render_recent_forecast(service, currency, as_of, groups, usage_error=None, d
     target, scope, rows, latest, usage_error = forecast_inputs(
         service, currency, as_of, groups, usage_error, daily_override)
     commitments = service.get("commitment-services") or []
+    selection = rows[0]
+    print()
+    heading(f"RECENT DAILY CONSUMPTION ({shown(currency)}) | UTC")
+    table(["Date", "Reported consumption", "Baseline selection"], [
+        [str(day), number(selection["daily"].get(day)) if not usage_error else "—",
+         "Selected" if day == selection["selected"] else ""]
+        for day in reversed(selection["recent"])], right_columns=(1,))
+    print(f"Selection: {selection['selection_reason']}.")
+    print(f"All baseline windows end on: {selection['selected'] or 'Unavailable'} (UTC).")
+    print("Missing amounts are unavailable, not zero. Today's amount is partial; reported dates may still be revised.")
+    if selection["selected"] and selection["selected"] not in selection["recent"]:
+        print(f"Selected day is outside the displayed 5-day window: {selection['selected']} (UTC).")
     if all(row["reason"] for row in rows):
         reason = scope[len("Unavailable: "):] if scope.startswith("Unavailable:") else (
             f"Usage request failed: {usage_error}" if usage_error else
@@ -723,7 +758,7 @@ def table(headers, rows, right_columns=(), group_starts=(), right_label_rows=())
 def cost_daily_override(subscription_id, summaries, service, currency, as_of, cost_usage):
     if cost_usage is None or credit_pool_ids(summaries, currency) != {service.get("id")}:
         return None
-    cutoff = as_of.replace(hour=0, minute=0, second=0, microsecond=0)
+    cutoff = as_of.replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=1)
     return subscription_daily_usage(cost_usage, subscription_id, currency, cutoff) or None
 
 
@@ -753,7 +788,8 @@ def subscription_rule_width(subscription_id, summary, summaries, as_of, usage, u
             except ValueError:
                 override = None
             render_recent_forecast(service, currency, as_of, usage, usage_error, override)
-    return max(table_widths(preview.getvalue()), default=max(1, shutil.get_terminal_size((80, 24)).columns - 4))
+    return min(max(table_widths(preview.getvalue()), default=76),
+               max(1, shutil.get_terminal_size((80, 24)).columns - 4))
 
 
 def render(subscription_id, summaries, as_of=None, usage=None, usage_error=None, cost_usage=None, cost_error=None, include_history=False):
@@ -853,7 +889,7 @@ def render(subscription_id, summaries, as_of=None, usage=None, usage_error=None,
 
 
 def main(argv=None):
-    global CLI_REGION
+    global CLI_REGION, USAGE_DELAY_HOURS
     CLI_REGION = None
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--region", metavar="REGION", help="Use this tenancy home region for all OCI calls, skipping automatic home-region discovery. Example: eu-frankfurt-1. Other regions may be rejected by billing APIs.")
@@ -861,7 +897,11 @@ def main(argv=None):
     parser.add_argument("--include-history", action="store_true", help="Show full details for past services and commitment periods; default: a history summary.")
     parser.add_argument("--output-dir", metavar="DIRECTORY", help="HTML output folder; default: ~/oci-subscription-analyzer-reports. Relative folders are resolved under home.")
     parser.add_argument("--no-html", action="store_true", help="Print the terminal report without saving an HTML file.")
+    parser.add_argument("--usage-delay-hours", type=int, default=0, metavar="HOURS", help="0: select the highest reported day among today and the preceding 4 UTC days (newest wins ties). Positive: select the latest UTC day ending at least HOURS ago. All baselines end on that date.")
     args = parser.parse_args(argv)
+    if args.usage_delay_hours < 0:
+        parser.error("--usage-delay-hours must be non-negative.")
+    USAGE_DELAY_HOURS = args.usage_delay_hours
     as_of = datetime.now(timezone.utc)
     if args.as_of:
         try:
@@ -904,7 +944,7 @@ def run_terminal_report(args, as_of, tenancy):
     print()
     heading(f"OCI SUBSCRIPTION AND BALANCE REPORT ({tenancy_name(tenancy, args.region)})")
     print()
-    print("Report version: 2.9 | ahmet.bakkal@oracle.com")
+    print("Report version: 3.0 | ahmet.bakkal@oracle.com")
     print("Region note: Run Cloud Shell in the tenancy home region.")
     try:
         CLI_REGION = args.region or home_region(tenancy)
@@ -931,7 +971,7 @@ def run_terminal_report(args, as_of, tenancy):
             cutoff = as_of.replace(hour=0, minute=0, second=0, microsecond=0)
             cost_usage, cost_error = None, None
             try:
-                cost_usage = fetch_cost_usage(tenancy, subscription_id, cutoff)
+                cost_usage = fetch_cost_usage(tenancy, subscription_id, cutoff + timedelta(days=1))
             except (RuntimeError, OSError) as exc:
                 cost_error = str(exc)
                 print(f"WARNING [{subscription_id}]: Cost Analysis request failed: {exc}", file=sys.stderr)
@@ -939,7 +979,7 @@ def run_terminal_report(args, as_of, tenancy):
             try:
                 starts = [timestamp(s.get("time-start")) for summary in summaries
                           for s in summary.get("subscribed-services") or []]
-                usage_start = min([cutoff - timedelta(days=90)] + [s for s in starts if s is not None])
+                usage_start = min([cutoff - timedelta(days=95 + math.ceil(USAGE_DELAY_HOURS / 24))] + [s for s in starts if s is not None])
                 usage = cli("onesubscription", "computed-usage", "aggregated-computed-usage-summary", "list-aggregated-computed-usages",
                             "--compartment-id", tenancy, "--subscription-id", str(subscription_id),
                             "--time-from", usage_start.isoformat(),

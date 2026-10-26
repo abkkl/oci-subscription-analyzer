@@ -23,6 +23,7 @@ python3 oci_balance.py --region eu-frankfurt-1
 | Option | Description |
 | --- | --- |
 | `--region REGION` | Use the specified tenancy home region; skip automatic discovery. Other regions may be rejected by billing APIs. |
+| `--usage-delay-hours HOURS` | Default `0`: highest reported amount among today and the previous 4 UTC days; newest date wins ties. Positive: latest UTC day whose end is at least HOURS before the snapshot. All baselines end on the selected date. |
 | `--include-history` | Expand past services and commitment details. Default: history summary. |
 | `--as-of YYYY-MM-DD` | Set the forecast reference to midnight UTC. Balances remain live; this is not a historical balance report. Default: current UTC time. |
 | `--output-dir DIRECTORY` | HTML folder; default `~/oci-subscription-analyzer-reports`. Relative folders resolve under home. Keep it under home for Cloud Shell downloads. |
@@ -50,7 +51,7 @@ python3 oci_balance.py --output-dir customer-reports
 python3 oci_balance.py --no-html
 ```
 
-Both terminal and HTML have a full outer frame. Subscription `=` separators match the forecast-table width. Long terminal prose wraps inside the frame; tables and the download code stay intact. Terminal reports are collected while the live spinner shows progress, then printed as a complete frame. Redirected output stays plain for scripting.
+Both terminal and HTML have a full outer frame. Subscription `=` separators fit the terminal frame. The frame adapts to terminal width; long content wraps inside it. Very narrow terminals can also wrap the download path; widen the terminal before copying it. HTML tables retain their alignment and scroll horizontally. Terminal reports are collected while the live spinner shows progress, then printed as a complete frame. Redirected output stays plain for scripting.
 
 Set `NO_COLOR=1` to disable color. The spinner is omitted from saved HTML. Exports do not overwrite existing files; account reports are created with owner-only file permissions. Export errors preserve the terminal report and return exit code 1.
 
@@ -60,15 +61,23 @@ The download command uses the version published on GitHub. To run a locally supp
 
 ## Report contents
 
-- Colored tenant/subscription/service headings, table-width separators and contract countdowns in years, months and days (zero components omitted).
+- Colored tenant/subscription/service headings, terminal-width separators and contract countdowns in years, months and days (zero components omitted).
 - Balances, reported overage and commitment periods with active/past/future status and remaining days.
-- Compact forecast: metrics as rows; columns ordered Two days ago, Last 7 days, Last 30 days, Last 90 days. Exact UTC date ranges appear above the table.
+- Compact forecast: metrics as rows; columns ordered Selected day, Last 7 days, Last 30 days, Last 90 days. Exact UTC date ranges appear above the table.
 - Consumption trend: 7-day versus 90-day average (without the Comment prefix).
 - Summarized history and omission notes for empty zero-credit services. When history exists, one reminder to use `--include-history` appears just before the final subscription counts.
 
 Amounts use one decimal place; calculations retain full precision. `—` means unavailable, not zero. Service and commitment balances are not added together; currencies are never combined.
 
-The `Two days ago` baseline uses one completed UTC day, two days before the run/reference date. For example, an October 26 run uses October 24. It is not a two-day average; the 7/30/90-day windows still end yesterday.
+Before each forecast, a five-day consumption table shows today and the previous four UTC days, including missing values and the selected date. With `--usage-delay-hours 0` (default), **Selected day** uses the highest reported daily amount; equal amounts select the newest date. This is a peak-based scenario, not proof that reporting is complete; today's amount is partial.
+
+With a positive delay, the maximum rule is disabled. Selection uses the latest UTC day whose **end** is at least that many hours before the snapshot. For example, on October 26 at 15:00 UTC, `--usage-delay-hours 48` selects October 23. A missing selected day stays unavailable; no replacement is chosen. A selected date outside the five-day display is explicitly identified.
+
+All 1/7/30/90-day baseline windows end on that same selected date, inclusively. Every report explains the selection mode, hours and date. Missing days remain excluded from averages; Coverage shows reported days. If no recent record exists in default mode, forecasting is unavailable. Reporting delays and revisions can still affect any date.
+
+```bash
+python3 oci_balance.py --usage-delay-hours 48
+```
 
 ## Forecast calculations
 
@@ -76,7 +85,7 @@ The horizon is the **unique active commitment's end**, or the service contract e
 
 Let `B` = remaining credit, `R` = baseline daily consumption and `D` = fractional days to the forecast horizon:
 
-Subscription headings and separators match the Last 7 days forecast: unused yellow, overage red, balanced green. With multiple pools, any 7-day overage takes priority; unavailable forecasts retain yellow. `Baseline` is uncolored; a blank line precedes the monthly calculation note. Baseline column headings and the three baseline-dependent metric labels (Forecasted Consumption - Total, Forecasted Consumption - Daily/Monthly) are cyan. Only the `Consumption trend:` prefix is cyan, matching Forecasted Consumption; the rest of its text stays uncolored. Baseline date columns and all metric-label ends are aligned. Blank lines surround the report, including after the end marker. The table header includes currency. Columns are Two days ago, Last 7 days, Last 30 days and Last 90 days. Rows are divided into four groups:
+Subscription headings and separators match the Last 7 days forecast: unused yellow, overage red, balanced green. With multiple pools, any 7-day overage takes priority; unavailable forecasts retain yellow. `Baseline` is uncolored; a blank line precedes the monthly calculation note. Baseline column headings and the three baseline-dependent metric labels (Forecasted Consumption - Total, Forecasted Consumption - Daily/Monthly) are cyan. Only the `Consumption trend:` prefix is cyan, matching Forecasted Consumption; the rest of its text stays uncolored. Baseline date columns and all metric-label ends are aligned. Blank lines surround the report, including after the end marker. The table header includes currency. Columns are Selected day, Last 7 days, Last 30 days and Last 90 days. Rows are divided into four groups:
 
 | Group | Metric | Meaning |
 | --- | --- | --- |
@@ -97,7 +106,7 @@ The horizon heading also shows remaining calendar years/months/days and total ca
 
 Cost Analysis supplies subscription-level daily costs only when a single active credit pool is identified in that currency, assuming those costs consume that pool. Otherwise, exact service-level OneSubscription usage is used.
 
-Usage requests cover 90 complete UTC days. Each baseline average uses **only reported daily records**: for `64/90` coverage, divide the sum of the 64 reported dates by **64**, not 90. Missing dates and dates before service start are excluded. An explicitly reported zero-cost day still counts. Coverage is the only missing-day indicator; no separate missing-record note is printed.
+Usage requests include today and enough earlier data for the selected date’s 90-day window, expanding the lookback for a configured delay. Each baseline average uses **only reported daily records**: for `64/90` coverage, divide the sum of the 64 reported dates by **64**, not 90. Missing dates and dates before service start are excluded. An explicitly reported zero-cost day still counts. Coverage is the only missing-day indicator; no separate missing-record note is printed.
 
 No reported dates (`0/N`) means N/A rather than a zero rate. API errors, malformed matching records, missing service/currency identifiers and invalid forecast periods remain unavailable. The 7-vs-90 consumption trend uses these same reported-day averages. Estimates assume steady consumption and no renewals or rollover; they are not invoices.
 
@@ -135,8 +144,8 @@ Failures do not stop other subscriptions. Exit code `1` means a request error/pa
 python3 -m unittest discover -v
 ```
 
-The suite includes HTML/frame tests and seven end-to-end scenarios using a temporary fake OCI CLI: overage, unused, balanced, mixed, exhausted credit with existing overage, zero consumption and missing records. It runs the real report and subprocess path without connecting to OCI.
+The suite includes HTML/frame tests and end-to-end scenarios using a temporary fake OCI CLI: overage, unused, balanced, mixed, exhausted credit with existing overage, zero consumption, missing records, delay selection and current-day selection. It runs the real report and subprocess path without connecting to OCI.
 
 See [overage test report](overage-test-report.md), [full overage output](examples/sample-output-overage.txt) and [exhausted-credit output](examples/sample-output-exhausted.txt).
 
-Version **2.9** · ahmet.bakkal@oracle.com
+Version **3.0** · ahmet.bakkal@oracle.com

@@ -45,7 +45,8 @@ class HtmlExportTests(unittest.TestCase):
         content = [line[2:-2].rstrip() for line in lines[1:-1]]
         rule = next(line for line in content if line and set(line) == {"="})
         metric_index = next(i for i, line in enumerate(content) if line.startswith("Metric (EUR)"))
-        self.assertEqual(len(rule), len(content[metric_index + 1]))
+        self.assertEqual(len(rule), len(lines[0]) - 4)
+        self.assertLessEqual(len(rule), max(76, len("Download: oci-subscription-analyzer-reports/oci-report-20261023-150000-123456.html")))
         self.assertIn('<section class="report-frame">', document)
         self.assertIn('<span class="overage">Overage estimate</span>', document)
         self.assertNotIn("Loading", document)
@@ -79,12 +80,14 @@ class HtmlExportTests(unittest.TestCase):
         self.assertEqual(len({len(line) for line in text}), 1)
         self.assertEqual(terminal.getvalue().count("Framed report"), 1)
 
-    def test_download_path_is_not_wrapped_inside_terminal_frame(self):
+    def test_narrow_terminal_wraps_long_path_without_expanding_frame(self):
         path = "oci-subscription-analyzer-reports/oci-report-20261023-150000-123456.html"
         with patch.object(report.shutil, "get_terminal_size", return_value=os.terminal_size((40, 24))):
             framed = report.boxed_report("Done\n" + path + "\n")
-        self.assertIn(path, framed)
-        self.assertTrue(any(path in line for line in framed.splitlines()))
+        lines = framed.strip("\n").splitlines()
+        self.assertTrue(all(len(line) <= 40 for line in lines))
+        content = "".join(line[2:-2].rstrip() for line in lines[1:-1])
+        self.assertIn(path, content)
 
     def run_local(self, root, options=(), partial=False):
         def fake_report(args, as_of, tenancy):
