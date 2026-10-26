@@ -22,7 +22,10 @@ class HtmlExportTests(unittest.TestCase):
             if "organization-subscription" in args:
                 return {"data": [{"id": "SYNTHETIC-SUBSCRIPTION"}]}
             if "usage-api" in args:
-                return {"data": {"items": data["costs"]}}
+                start = args[args.index("--time-usage-started") + 1]
+                end = args[args.index("--time-usage-ended") + 1]
+                return {"data": {"items": [row for row in data["costs"]
+                    if start <= row["time-usage-started"] < end]}}
             if "computed-usage" in args:
                 return {"data": data["usage"]}
             return {"data": data["summaries"]}

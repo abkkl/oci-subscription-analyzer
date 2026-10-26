@@ -87,7 +87,7 @@ class BaselineSelectionTests(unittest.TestCase):
     def test_delay_expands_query_to_cover_ninety_day_window(self):
         with patch.object(report, "USAGE_DELAY_HOURS", 240), patch.object(report, "cli_payload", return_value={"data": {"items": []}}) as api:
             report.fetch_cost_usage("tenant", "sub", self.now.replace(hour=0) + timedelta(days=1))
-        args = api.call_args[0]
+        args = api.call_args_list[0][0]
         first = report.timestamp(args[args.index("--time-usage-started") + 1])
         selected = self.today - timedelta(days=11)
         self.assertLessEqual(first.date(), selected - timedelta(days=89))
@@ -151,3 +151,49 @@ class BaselineSelectionTests(unittest.TestCase):
             lines = framed.strip("\n").splitlines()
             self.assertTrue(all(len(line) <= columns for line in lines))
             self.assertEqual(lines[1][2:-2], "=" * (len(lines[0]) - 4))
+
+    def test_cost_query_chunks_cover_full_range_once_and_respect_daily_limit(self):
+        for delay in (0, 1, 48, 2400):
+            calls = []
+            def api(*args):
+                first = report.timestamp(args[args.index("--time-usage-started") + 1])
+                last = report.timestamp(args[args.index("--time-usage-ended") + 1])
+                self.assertLessEqual(last - first, timedelta(days=93))
+                self.assertEqual(first.hour, 0)
+                self.assertEqual(last.hour, 0)
+                calls.append((first, last))
+                return {"data": {"items": [{"date": (first + timedelta(days=i)).date().isoformat()}
+                    for i in range((last-first).days)]}}
+            cutoff = self.now.replace(hour=0) + timedelta(days=1)
+            with patch.object(report, "USAGE_DELAY_HOURS", delay), patch.object(report, "cli_payload", side_effect=api):
+                rows = report.fetch_cost_usage("tenant", "sub", cutoff)
+            expected = 95 + report.math.ceil(delay / 24)
+            self.assertEqual(len(rows), expected)
+            self.assertEqual(len({row["date"] for row in rows}), expected)
+            self.assertEqual(calls[0][0], cutoff - timedelta(days=expected))
+            self.assertEqual(calls[-1][1], cutoff)
+            self.assertTrue(all(previous[1] == following[0] for previous, following in zip(calls, calls[1:])))
+
+    def test_each_chunk_has_independent_pagination_tokens(self):
+        replies = [
+            {"data": {"items": [1]}, "opc-next-page": "next"},
+            {"data": {"items": [2]}},
+            {"data": {"items": [3]}, "opc-next-page": "next"},
+            {"data": {"items": [4]}}]
+        with patch.object(report, "cli_payload", side_effect=replies) as api:
+            rows = report.fetch_cost_usage("tenant", "sub", self.now.replace(hour=0))
+        self.assertEqual(rows, [1, 2, 3, 4])
+        for index in (0, 2):
+            self.assertNotIn("--page", api.call_args_list[index][0])
+            self.assertIn("--page", api.call_args_list[index + 1][0])
+
+    def test_repeated_pagination_token_is_rejected_within_chunk(self):
+        reply = {"data": {"items": []}, "opc-next-page": "repeat"}
+        with patch.object(report, "cli_payload", return_value=reply):
+            with self.assertRaisesRegex(RuntimeError, "repeated a pagination token"):
+                report.fetch_cost_usage("tenant", "sub", self.now.replace(hour=0))
+
+    def test_later_chunk_failure_is_not_returned_as_successful_partial_data(self):
+        with patch.object(report, "cli_payload", side_effect=[{"data": {"items": [1]}}, RuntimeError("denied")]):
+            with self.assertRaisesRegex(RuntimeError, "denied"):
+                report.fetch_cost_usage("tenant", "sub", self.now.replace(hour=0))

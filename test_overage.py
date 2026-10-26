@@ -62,7 +62,10 @@ elif "region-subscription" in args:
 elif "organization-subscription" in args:
     response = {"data": [{"id": "SYNTHETIC-SUBSCRIPTION"}]}
 elif "usage-api" in args:
-    response = {"data": {"items": fixture["costs"]}}
+    start = args[args.index("--time-usage-started") + 1]
+    end = args[args.index("--time-usage-ended") + 1]
+    response = {"data": {"items": [row for row in fixture["costs"]
+        if start <= row["time-usage-started"] < end]}}
 elif "computed-usage" in args:
     response = {"data": fixture["usage"]}
 elif "subscription" in args:

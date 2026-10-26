@@ -329,28 +329,36 @@ def daily_usage(groups, service_id, currency, cutoff):
 
 def fetch_cost_usage(tenancy, subscription_id, cutoff):
     """Fetch Cost Analysis daily costs in the detected home region, including pages."""
-    rows, page, seen = [], None, set()
-    while True:
-        args = ["usage-api", "usage-summary", "request-summarized-usages",
-                "--tenant-id", tenancy, "--granularity", "DAILY", "--query-type", "COST",
-                "--time-usage-started", (cutoff - timedelta(days=95 + math.ceil(USAGE_DELAY_HOURS / 24))).isoformat(),
-                "--time-usage-ended", cutoff.isoformat(), "--group-by", '["subscriptionId"]',
-                "--filter", json.dumps({"operator": "AND", "dimensions": [
-                    {"key": "subscriptionId", "value": str(subscription_id)}]}),
-                "--is-aggregate-by-time", "false", "--limit", "1000"]
-        if page:
-            args.extend(["--page", page])
-        payload = cli_payload(*args)
-        data = payload.get("data")
-        if not isinstance(data, dict) or not isinstance(data.get("items"), list):
-            raise RuntimeError("Cost Analysis returned an unexpected response shape.")
-        rows.extend(data["items"])
-        page = payload.get("opc-next-page")
-        if not page:
-            return rows
-        if page in seen:
-            raise RuntimeError("Cost Analysis repeated a pagination token.")
-        seen.add(page)
+    rows = []
+    first = cutoff - timedelta(days=95 + math.ceil(USAGE_DELAY_HOURS / 24))
+    # OCI DAILY requests accept at most 93 days. Half-open, adjacent chunks
+    # preserve the full lookback without counting a boundary day twice.
+    while first < cutoff:
+        last = min(first + timedelta(days=90), cutoff)
+        page, seen = None, set()
+        while True:
+            args = ["usage-api", "usage-summary", "request-summarized-usages",
+                    "--tenant-id", tenancy, "--granularity", "DAILY", "--query-type", "COST",
+                    "--time-usage-started", first.isoformat(),
+                    "--time-usage-ended", last.isoformat(), "--group-by", '["subscriptionId"]',
+                    "--filter", json.dumps({"operator": "AND", "dimensions": [
+                        {"key": "subscriptionId", "value": str(subscription_id)}]}),
+                    "--is-aggregate-by-time", "false", "--limit", "1000"]
+            if page:
+                args.extend(["--page", page])
+            payload = cli_payload(*args)
+            data = payload.get("data")
+            if not isinstance(data, dict) or not isinstance(data.get("items"), list):
+                raise RuntimeError("Cost Analysis returned an unexpected response shape.")
+            rows.extend(data["items"])
+            page = payload.get("opc-next-page")
+            if not page:
+                break
+            if page in seen:
+                raise RuntimeError("Cost Analysis repeated a pagination token.")
+            seen.add(page)
+        first = last
+    return rows
 
 
 def subscription_daily_usage(rows, subscription_id, currency, cutoff):
@@ -944,7 +952,7 @@ def run_terminal_report(args, as_of, tenancy):
     print()
     heading(f"OCI SUBSCRIPTION AND BALANCE REPORT ({tenancy_name(tenancy, args.region)})")
     print()
-    print("Report version: 3.0 | ahmet.bakkal@oracle.com")
+    print("Report version: 3.1 | ahmet.bakkal@oracle.com")
     print("Region note: Run Cloud Shell in the tenancy home region.")
     try:
         CLI_REGION = args.region or home_region(tenancy)

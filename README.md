@@ -106,7 +106,7 @@ The horizon heading also shows remaining calendar years/months/days and total ca
 
 Cost Analysis supplies subscription-level daily costs only when a single active credit pool is identified in that currency, assuming those costs consume that pool. Otherwise, exact service-level OneSubscription usage is used.
 
-Usage requests include today and enough earlier data for the selected date’s 90-day window, expanding the lookback for a configured delay. Each baseline average uses **only reported daily records**: for `64/90` coverage, divide the sum of the 64 reported dates by **64**, not 90. Missing dates and dates before service start are excluded. An explicitly reported zero-cost day still counts. Coverage is the only missing-day indicator; no separate missing-record note is printed.
+Usage requests include today and enough earlier data for the selected date’s 90-day window, expanding the lookback for a configured delay. Cost Analysis requests are split into adjacent windows of at most 90 days to stay within OCI’s 93-day DAILY limit; each window is paginated independently. Each baseline average uses **only reported daily records**: for `64/90` coverage, divide the sum of the 64 reported dates by **64**, not 90. Missing dates and dates before service start are excluded. An explicitly reported zero-cost day still counts. Coverage is the only missing-day indicator; no separate missing-record note is printed.
 
 No reported dates (`0/N`) means N/A rather than a zero rate. API errors, malformed matching records, missing service/currency identifiers and invalid forecast periods remain unavailable. The 7-vs-90 consumption trend uses these same reported-day averages. Estimates assume steady consumption and no renewals or rollover; they are not invoices.
 
@@ -148,4 +148,4 @@ The suite includes HTML/frame tests and end-to-end scenarios using a temporary f
 
 See [overage test report](overage-test-report.md), [full overage output](examples/sample-output-overage.txt) and [exhausted-credit output](examples/sample-output-exhausted.txt).
 
-Version **3.0** · ahmet.bakkal@oracle.com
+Version **3.1** · ahmet.bakkal@oracle.com

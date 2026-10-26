@@ -697,6 +697,7 @@ class CostAnalysisTests(unittest.TestCase):
         with patch.object(report, "cli_payload", side_effect=[
             {"data": {"items": [self.costs()[0]]}, "opc-next-page": "page-2"},
             {"data": {"items": [self.costs()[1]]}},
+            {"data": {"items": []}},
         ]) as mock_cli:
             result = report.fetch_cost_usage("example-tenancy", "example", self.now)
         self.assertEqual(len(result), 2)

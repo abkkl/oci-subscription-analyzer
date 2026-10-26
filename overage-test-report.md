@@ -1,6 +1,6 @@
-# Overage validation — version 3.0
+# Overage validation — version 3.1
 
-84 tests passed: regression, HTML/frame, baseline-selection and subprocess checks. All data is synthetic. The temporary fake OCI CLI supplies responses to the real report subprocess; no live tenancy or credentials are used.
+88 tests passed: regression, HTML/frame, baseline-selection and subprocess checks. All data is synthetic. The temporary fake OCI CLI supplies responses to the real report subprocess; no live tenancy or credentials are used.
 
 ## Full-overage scenario
 
@@ -52,3 +52,5 @@ The [missing-days report](examples/sample-output-missing-days.txt) has 64 record
 HTML/frame tests cover default and custom output folders, --no-html, only the home-relative download code, escaping untrusted text, preserved colors, no spinner frames in HTML, exclusive file creation, owner-only permissions, partial failures, complete terminal frames and subscription rules matching the terminal frame width.
 
 The single-day baseline selects the largest reported total among today and the previous four UTC days (newest date wins ties). Positive `--usage-delay-hours` instead selects by elapsed hours after day end. All 1/7/30/90-day windows share this date. Tests cover current-day inclusion in both sources, midnight/year/leap boundaries, missing selected dates, zero amounts, out-of-window delays, midnight-aligned API lookbacks, CLI/HTML propagation and terminal-width rules.
+
+Cost Analysis chunking checks cover the 93-day API limit, contiguous non-overlapping date windows, long delays, independent pagination, repeated tokens and failures in later windows.
