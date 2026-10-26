@@ -556,7 +556,7 @@ def end_report():
 
 
 def forecast_rows(record, daily, as_of, history_start=None):
-    """Use fixed 90/30/7/1-day windows, excluding the current incomplete UTC day."""
+    """Use 90/30/7 completed-day windows and one UTC day from two days ago."""
     start = timestamp(record.get("time-start"))
     history_start = history_start or start
     end = timestamp(record.get("time-end"))
@@ -568,8 +568,8 @@ def forecast_rows(record, daily, as_of, history_start=None):
     elif available is None or available < 0:
         horizon_error = "Missing/non-negative balance required"
     result = []
-    for days, label in ((90, "Last 90 days"), (30, "Last 30 days"), (7, "Last 7 days"), (1, "Previous day")):
-        first = cutoff - timedelta(days=days)
+    for days, label in ((90, "Last 90 days"), (30, "Last 30 days"), (7, "Last 7 days"), (1, "Two days ago")):
+        first = cutoff - timedelta(days=2 if label == "Two days ago" else days)
         dates = [(first + timedelta(days=i)).date() for i in range(days)]
         reported = [day for day in dates if day in daily and
                     (history_start is None or day >= history_start.date())]
@@ -904,7 +904,7 @@ def run_terminal_report(args, as_of, tenancy):
     print()
     heading(f"OCI SUBSCRIPTION AND BALANCE REPORT ({tenancy_name(tenancy, args.region)})")
     print()
-    print("Report version: 2.8 | ahmet.bakkal@oracle.com")
+    print("Report version: 2.9 | ahmet.bakkal@oracle.com")
     print("Region note: Run Cloud Shell in the tenancy home region.")
     try:
         CLI_REGION = args.region or home_region(tenancy)

@@ -32,7 +32,7 @@ class LayoutAndMetadataTests(unittest.TestCase):
                 self.assertIn(f"\033[1;{color}m====", text)
                 outcome = "Overage estimate" if color == "31" else "Unused estimate"
                 self.assertIn(f"\033[1;{color}m{outcome}", text)
-                for label in ["Previous day", "Last 7 days", "Last 30 days", "Forecasted Consumption - Total",
+                for label in ["Two days ago", "Last 7 days", "Last 30 days", "Forecasted Consumption - Total",
                               "Forecasted Consumption - Daily", "Forecasted Consumption - Monthly"]:
                     self.assertIn(f"\033[1;36m{label}\033[0m", text)
                 self.assertIn("\nBaseline\n", text)
@@ -317,6 +317,22 @@ class ReportTests(unittest.TestCase):
 
 
 class ForecastTests(unittest.TestCase):
+    def test_two_days_ago_is_exactly_one_completed_utc_day(self):
+        for current in [datetime(2026, 10, 26, 15, tzinfo=timezone.utc),
+                        datetime(2027, 1, 1, tzinfo=timezone.utc),
+                        datetime(2028, 3, 1, tzinfo=timezone.utc)]:
+            with self.subTest(current=current):
+                target = (current - timedelta(days=2)).date()
+                yesterday = (current - timedelta(days=1)).date()
+                record = {"time-start": (current - timedelta(days=100)).isoformat(),
+                          "time-end": (current + timedelta(days=10)).isoformat(), "available-amount": "1000"}
+                rows = report.forecast_rows(record, {target: Decimal(20), yesterday: Decimal(100)}, current)
+                single = next(row for row in rows if row["label"] == "Two days ago")
+                self.assertEqual(single["first"], target)
+                self.assertEqual(single["last"], target)
+                self.assertEqual(single["rate"], Decimal(20))
+                self.assertEqual(single["coverage"], "1/1")
+
     def setUp(self):
         patcher = patch.object(report, "fetch_cost_usage", return_value=[])
         patcher.start()
@@ -329,7 +345,7 @@ class ForecastTests(unittest.TestCase):
                        "time-end": "2026-11-02T00:00:00Z", "available-amount": "10000"}
         self.daily = {}
         for offset in range(1, 91):
-            self.daily[(self.now - timedelta(days=offset)).date()] = Decimal(100 if offset == 1 else 20 if offset <= 7 else 10)
+            self.daily[(self.now - timedelta(days=offset)).date()] = Decimal(100 if offset == 2 else 20 if offset <= 7 else 10)
 
     def test_three_independent_forecasts_and_exact_window_dates(self):
         quarter, month, week, previous = report.forecast_rows(self.record, self.daily, self.now)
@@ -341,7 +357,7 @@ class ForecastTests(unittest.TestCase):
         self.assertEqual(previous["rate"], Decimal(100))
         self.assertEqual(previous["unused"], Decimal(9000))
         self.assertEqual(str(month["first"]), "2026-09-23")
-        self.assertEqual(str(previous["last"]), "2026-10-22")
+        self.assertEqual(str(previous["last"]), "2026-10-21")
 
     def test_missing_older_day_is_excluded_from_ninety_day_average(self):
         daily = dict(self.daily)
@@ -382,7 +398,7 @@ class ForecastTests(unittest.TestCase):
         stop = next(i for i in range(start, len(lines)) if lines[i].lstrip().startswith("Forecast outcome"))
         block = lines[start:stop + 1]
         self.assertEqual([c.strip() for c in block[0].split("|")],
-                         ["Metric (EUR)", "Previous day", "Last 7 days", "Last 30 days", "Last 90 days"])
+                         ["Metric (EUR)", "Two days ago", "Last 7 days", "Last 30 days", "Last 90 days"])
         self.assertEqual([line.split("|")[0].strip() for line in block[2:] if "|" in line], [
             "Remaining Credit - Total", "Forecasted Consumption - Total", "Unused/Overage Credit - Total",
             "Required Consumption - Daily", "Forecasted Consumption - Daily", "Unused/Overage Credit - Daily",
@@ -394,7 +410,7 @@ class ForecastTests(unittest.TestCase):
         self.assertTrue(all(len(line) <= 110 for line in block))
 
     def test_missing_previous_day_is_unavailable(self):
-        del self.daily[(self.now - timedelta(days=1)).date()]
+        del self.daily[(self.now - timedelta(days=2)).date()]
         rows = report.forecast_rows(self.record, self.daily, self.now)
         self.assertTrue(all(r["reason"] is None for r in rows[:-1]))
         self.assertEqual(rows[-1]["coverage"], "0/1")
@@ -434,7 +450,7 @@ class ForecastTests(unittest.TestCase):
         with contextlib.redirect_stdout(output):
             report.render_recent_forecast(self.record, "EUR", self.now, [], daily_override=self.daily)
         lines = output.getvalue().splitlines()
-        baselines = [line for line in lines if "(UTC): 2026-" in line and line.lstrip().startswith(("Previous day", "Last "))]
+        baselines = [line for line in lines if "(UTC): 2026-" in line and line.lstrip().startswith(("Two days ago", "Last "))]
         self.assertEqual(len(baselines), 4)
         self.assertEqual(len({line.index(":") for line in baselines}), 1)
         self.assertEqual(len({line.index("2026-") for line in baselines}), 1)
@@ -449,7 +465,7 @@ class ForecastTests(unittest.TestCase):
         self.assertEqual(len({len(line.split("|")[0].rstrip()) for line in metric_lines}), 1)
 
     def test_explicit_zero_is_valid_and_overrun_is_separate(self):
-        yesterday = (self.now - timedelta(days=1)).date()
+        yesterday = (self.now - timedelta(days=2)).date()
         self.daily[yesterday] = Decimal(0)
         self.assertEqual(report.forecast_rows(self.record, self.daily, self.now)[-1]["unused"], Decimal(10000))
         self.daily[yesterday] = Decimal(2000)
@@ -477,7 +493,7 @@ class ForecastTests(unittest.TestCase):
         self.assertNotIn("Last completed calendar day", output.getvalue())
         self.assertIn("Latest reported completed usage day (UTC): 2026-10-21", output.getvalue())
         self.assertIn("Baseline", output.getvalue())
-        self.assertIn("0/1", output.getvalue())
+        self.assertIn("1/1", output.getvalue())
         self.assertNotIn("Missing daily records", output.getvalue())
 
     def test_commitment_horizon_does_not_use_contract_end(self):
@@ -513,13 +529,13 @@ class ForecastTests(unittest.TestCase):
 
     def test_mixed_forecast_marks_unused_and_overage_per_scenario(self):
         daily = dict(self.daily)
-        daily[(self.now - timedelta(days=1)).date()] = Decimal(2000)
+        daily[(self.now - timedelta(days=2)).date()] = Decimal(2000)
         output = io.StringIO()
         with contextlib.redirect_stdout(output):
             report.render_recent_forecast(self.record, "EUR", self.now, [], daily_override=daily)
         text = output.getvalue()
         self.assertNotIn("Forecast outcome:", text)
-        self.assertIn("Baseline\nPrevious day (UTC)", text)
+        self.assertIn("Baseline\nTwo days ago (UTC)", text)
         daily_line = next(line for line in text.splitlines() if line.lstrip().startswith("Unused/Overage Credit - Daily"))
         total_line = next(line for line in text.splitlines() if line.lstrip().startswith("Unused/Overage Credit - Total"))
         self.assertEqual(daily_line.split("|")[1].strip(), "1,000.0")
@@ -570,12 +586,12 @@ class ForecastTests(unittest.TestCase):
 
     def test_partial_forecast_keeps_table(self):
         output = io.StringIO()
-        yesterday = (self.now - timedelta(days=1)).date()
+        yesterday = (self.now - timedelta(days=2)).date()
         with contextlib.redirect_stdout(output):
             report.render_recent_forecast(self.record, "EUR", self.now, [],
                                           daily_override={yesterday: Decimal(10)})
         self.assertIn("Metric", output.getvalue())
-        self.assertIn("Previous day", output.getvalue())
+        self.assertIn("Two days ago", output.getvalue())
         self.assertIn("Unused estimate", output.getvalue())
         self.assertNotIn("Forecast unavailable", output.getvalue())
 

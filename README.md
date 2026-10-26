@@ -62,11 +62,13 @@ The download command uses the version published on GitHub. To run a locally supp
 
 - Colored tenant/subscription/service headings, table-width separators and contract countdowns in years, months and days (zero components omitted).
 - Balances, reported overage and commitment periods with active/past/future status and remaining days.
-- Compact forecast: metrics as rows; columns ordered Previous day, Last 7 days, Last 30 days, Last 90 days. Exact UTC date ranges appear above the table.
+- Compact forecast: metrics as rows; columns ordered Two days ago, Last 7 days, Last 30 days, Last 90 days. Exact UTC date ranges appear above the table.
 - Consumption trend: 7-day versus 90-day average (without the Comment prefix).
 - Summarized history and omission notes for empty zero-credit services. When history exists, one reminder to use `--include-history` appears just before the final subscription counts.
 
 Amounts use one decimal place; calculations retain full precision. `—` means unavailable, not zero. Service and commitment balances are not added together; currencies are never combined.
+
+The `Two days ago` baseline uses one completed UTC day, two days before the run/reference date. For example, an October 26 run uses October 24. It is not a two-day average; the 7/30/90-day windows still end yesterday.
 
 ## Forecast calculations
 
@@ -74,7 +76,7 @@ The horizon is the **unique active commitment's end**, or the service contract e
 
 Let `B` = remaining credit, `R` = baseline daily consumption and `D` = fractional days to the forecast horizon:
 
-Subscription headings and separators match the Last 7 days forecast: unused yellow, overage red, balanced green. With multiple pools, any 7-day overage takes priority; unavailable forecasts retain yellow. `Baseline` is uncolored; a blank line precedes the monthly calculation note. Baseline column headings and the three baseline-dependent metric labels (Forecasted Consumption - Total, Forecasted Consumption - Daily/Monthly) are cyan. Only the `Consumption trend:` prefix is cyan, matching Forecasted Consumption; the rest of its text stays uncolored. Baseline date columns and all metric-label ends are aligned. Blank lines surround the report, including after the end marker. The table header includes currency. Columns are Previous day, Last 7 days, Last 30 days and Last 90 days. Rows are divided into four groups:
+Subscription headings and separators match the Last 7 days forecast: unused yellow, overage red, balanced green. With multiple pools, any 7-day overage takes priority; unavailable forecasts retain yellow. `Baseline` is uncolored; a blank line precedes the monthly calculation note. Baseline column headings and the three baseline-dependent metric labels (Forecasted Consumption - Total, Forecasted Consumption - Daily/Monthly) are cyan. Only the `Consumption trend:` prefix is cyan, matching Forecasted Consumption; the rest of its text stays uncolored. Baseline date columns and all metric-label ends are aligned. Blank lines surround the report, including after the end marker. The table header includes currency. Columns are Two days ago, Last 7 days, Last 30 days and Last 90 days. Rows are divided into four groups:
 
 | Group | Metric | Meaning |
 | --- | --- | --- |
@@ -137,4 +139,4 @@ The suite includes HTML/frame tests and seven end-to-end scenarios using a tempo
 
 See [overage test report](overage-test-report.md), [full overage output](examples/sample-output-overage.txt) and [exhausted-credit output](examples/sample-output-exhausted.txt).
 
-Version **2.8** · ahmet.bakkal@oracle.com
+Version **2.9** · ahmet.bakkal@oracle.com

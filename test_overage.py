@@ -16,13 +16,13 @@ REFERENCE = datetime(2026, 10, 23, tzinfo=timezone.utc)
 
 
 def fixture(balance="1000", rates=("200", "200", "200"), actual_overage="0", missing_day=False):
-    """rates are previous-day, preceding six days and preceding 83 days."""
+    """rates are two-days-ago, the other six recent days and preceding 83 days."""
     daily, costs = [], []
     total = 0
     for offset in range(1, 91):
-        if missing_day and offset == 1:
+        if missing_day and offset == 2:
             continue
-        cost = rates[0] if offset == 1 else rates[1] if offset <= 7 else rates[2]
+        cost = rates[0] if offset == 2 else rates[1] if offset <= 7 else rates[2]
         start = REFERENCE - timedelta(days=offset)
         costs.append({"subscription-id": "SYNTHETIC-SUBSCRIPTION", "currency": "EUR",
                       "computed-amount": cost, "time-usage-started": start.isoformat(),
