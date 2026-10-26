@@ -1,80 +1,98 @@
 
-+----------------------------------------------------------------------------------------------------------------------------+
-| OCI SUBSCRIPTION AND BALANCE REPORT (Synthetic Test Tenant)                                                                |
-|                                                                                                                            |
-| Report version: 2.9 | ahmet.bakkal@oracle.com                                                                              |
-| Region note: Run Cloud Shell in the tenancy home region.                                                                   |
-| Home region: eu-frankfurt-1 (selected automatically for API calls)                                                         |
-|                                                                                                                            |
-| ============================================================================================================               |
-| SUBSCRIPTION SYNTHETIC-SUBSCRIPTION | ACTIVE | EUR                                                                         |
-| ============================================================================================================               |
-| Contract end (UTC): 2027-11-02 | 1 year 10 days remaining (375 days total)                                                 |
-| End date based on reported service contract dates.                                                                         |
-|                                                                                                                            |
-| ──────────────────────────────────────────────────────────────────────────────                                             |
-| SERVICE 1 | EXAMPLE                                                                                                        |
-| Synthetic credits                                                                                                          |
-| ──────────────────────────────────────────────────────────────────────────────                                             |
-| Status: ACTIVE                                                                                                             |
-| Program: — | Model: Annual                                                                                                 |
-| Period (UTC): 2026-01-01 → 2027-11-02                                                                                      |
-| Contract end (UTC): 2027-11-02 | 1 year 10 days remaining (375 days total)                                                 |
-|                                                                                                                            |
-| BALANCES (EUR)                                                                                                             |
-| Promo credit | Service total | Funded | Consumed | Remaining | Overage (records)                                           |
-| -------------+---------------+--------+----------+-----------+------------------                                           |
-|            — |      25,000.0 |      — | 18,100.0 |   7,000.0 |             100.0                                           |
-|                                                                                                                            |
-| Overage audit (UTC): 2026-07-25 - 2026-10-22 | Usage dates returned: 90/295 | OVERAGE records: 1. Amounts cover returned r |
-| ecords only; full contract coverage is unverified.                                                                         |
-|                                                                                                                            |
-| Commitment periods: 2                                                                                                      |
-| Status | Credit status  | Start UTC  | End UTC    | Quantity | Net amount | Funded | Consumed | Remaining | Remaining days |
-| -------+----------------+------------+------------+----------+------------+--------+----------+-----------+--------------- |
-| active | Overage credit | 2026-01-01 | 2026-11-02 | 18,000.0 |   18,000.0 |      — | 18,100.0 |       0.0 |             10 |
-| future | --             | 2026-11-02 | 2027-11-02 |  7,000.0 |    7,000.0 |      — |        — |   7,000.0 |            365 |
-|                                                                                                                            |
-| FORECAST (EUR) | Horizon: Active commitment end - 2026-11-02 (10 days remaining; 10 days total)                            |
-|                                                                                                                            |
-| Balance snapshot UTC: 2026-10-23 00:00:00                                                                                  |
-| Latest reported completed usage day (UTC): 2026-10-22                                                                      |
-| Future renewals and credit rollover are not forecast.                                                                      |
-|                                                                                                                            |
-| Baseline                                                                                                                   |
-| Two days ago (UTC): 2026-10-21 - 2026-10-21                                                                                |
-|  Last 7 days (UTC): 2026-10-16 - 2026-10-22                                                                                |
-| Last 30 days (UTC): 2026-09-23 - 2026-10-22                                                                                |
-| Last 90 days (UTC): 2026-07-25 - 2026-10-22                                                                                |
-|                                                                                                                            |
-| Monthly calculation: 744 hours = 31 days                                                                                   |
-|                                                                                                                            |
-| Metric (EUR)                     | Two days ago     | Last 7 days      | Last 30 days     | Last 90 days                   |
-| ---------------------------------+------------------+------------------+------------------+-----------------               |
-|         Remaining Credit - Total |              0.0 |              0.0 |              0.0 |              0.0               |
-|   Forecasted Consumption - Total |          2,000.0 |          2,000.0 |          2,000.0 |          2,000.0               |
-|    Unused/Overage Credit - Total |          2,000.0 |          2,000.0 |          2,000.0 |          2,000.0               |
-| ---------------------------------+------------------+------------------+------------------+-----------------               |
-|     Required Consumption - Daily |              0.0 |              0.0 |              0.0 |              0.0               |
-|   Forecasted Consumption - Daily |            200.0 |            200.0 |            200.0 |            200.0               |
-|    Unused/Overage Credit - Daily |            200.0 |            200.0 |            200.0 |            200.0               |
-| ---------------------------------+------------------+------------------+------------------+-----------------               |
-|   Required Consumption - Monthly |              0.0 |              0.0 |              0.0 |              0.0               |
-| Forecasted Consumption - Monthly |          6,200.0 |          6,200.0 |          6,200.0 |          6,200.0               |
-|  Unused/Overage Credit - Monthly |          6,200.0 |          6,200.0 |          6,200.0 |          6,200.0               |
-| ---------------------------------+------------------+------------------+------------------+-----------------               |
-|                  Days to horizon |        10.0 Days |        10.0 Days |        10.0 Days |        10.0 Days               |
-|                         Coverage |              1/1 |              7/7 |            30/30 |            90/90               |
-|                 Forecast outcome | Overage estimate | Overage estimate | Overage estimate | Overage estimate               |
-|                                                                                                                            |
-| Consumption trend: 7-day average 200.0 EUR/day vs 90-day average 200.0 EUR/day -> 0.0% unchanged; 1.0x the 90-day average. |
-|                                                                                                                            |
-| Reported usage may still be delayed or revised.                                                                            |
-|                                                                                                                            |
-| Subscriptions: 1 | Successful: 1 | Failed: 0                                                                               |
-|                                                                                                                            |
-| Download: oci-subscription-analyzer-reports/oci-report-20261023-153219-048662.html                                         |
-|                                                                                                                            |
-| *END OF THE REPORT* (2026-10-23 15:32:19 UTC)                                                                              |
-+----------------------------------------------------------------------------------------------------------------------------+
++----------------------------------------------------------------------------------------------------------------------+
+| OCI SUBSCRIPTION AND BALANCE REPORT (Synthetic Example Tenant)                                                       |
+|                                                                                                                      |
+| Report version: 3.0 | ahmet.bakkal@oracle.com                                                                        |
+| Region note: Run Cloud Shell in the tenancy home region.                                                             |
+| Home region: eu-frankfurt-1 (selected automatically for API calls)                                                   |
+|                                                                                                                      |
+| ==================================================================================================================== |
+| SUBSCRIPTION SYNTHETIC-SUBSCRIPTION | ACTIVE | EUR                                                                   |
+| ==================================================================================================================== |
+| Contract end (UTC): 2027-11-02 | 1 year 10 days remaining (375 days total)                                           |
+| End date based on reported service contract dates.                                                                   |
+|                                                                                                                      |
+| ──────────────────────────────────────────────────────────────────────────────                                       |
+| SERVICE 1 | EXAMPLE                                                                                                  |
+| Synthetic credits                                                                                                    |
+| ──────────────────────────────────────────────────────────────────────────────                                       |
+| Status: ACTIVE                                                                                                       |
+| Program: — | Model: Annual                                                                                           |
+| Period (UTC): 2026-01-01 → 2027-11-02                                                                                |
+| Contract end (UTC): 2027-11-02 | 1 year 10 days remaining (375 days total)                                           |
+|                                                                                                                      |
+| BALANCES (EUR)                                                                                                       |
+| Promo credit | Service total | Funded | Consumed | Remaining | Overage (records)                                     |
+| -------------+---------------+--------+----------+-----------+------------------                                     |
+|            — |      25,000.0 |      — | 18,100.0 |   7,000.0 |             100.0                                     |
+|                                                                                                                      |
+| Overage audit (UTC): 2026-07-25 - 2026-10-22 | Usage dates returned: 90/295 | OVERAGE records: 1. Amounts cover retu |
+| rned records only; full contract coverage is unverified.                                                             |
+|                                                                                                                      |
+| Commitment periods: 2                                                                                                |
+| Status | Credit status  | Start UTC  | End UTC    | Quantity | Net amount | Funded | Consumed | Remaining | Remainin |
+| g days                                                                                                               |
+| -------+----------------+------------+------------+----------+------------+--------+----------+-----------+--------- |
+| ------                                                                                                               |
+| active | Overage credit | 2026-01-01 | 2026-11-02 | 18,000.0 |   18,000.0 |      — | 18,100.0 |       0.0 |          |
+|     10                                                                                                               |
+| future | --             | 2026-11-02 | 2027-11-02 |  7,000.0 |    7,000.0 |      — |        — |   7,000.0 |          |
+|    365                                                                                                               |
+|                                                                                                                      |
+| RECENT DAILY CONSUMPTION (EUR) | UTC                                                                                 |
+| Date       | Reported consumption | Baseline selection                                                               |
+| -----------+----------------------+-------------------                                                               |
+| 2026-10-19 |                200.0 |                                                                                  |
+| 2026-10-20 |                200.0 |                                                                                  |
+| 2026-10-21 |                200.0 |                                                                                  |
+| 2026-10-22 |                200.0 | Selected                                                                         |
+| 2026-10-23 |                  0.0 |                                                                                  |
+| Selection: --usage-delay-hours 0: highest reported consumption in the last 5 UTC days including today; ties use the  |
+| newest date.                                                                                                         |
+| All baseline windows end on: 2026-10-22 (UTC).                                                                       |
+| Missing amounts are unavailable, not zero. Today's amount is partial; reported dates may still be revised.           |
+|                                                                                                                      |
+| FORECAST (EUR) | Horizon: Active commitment end - 2026-11-02 (10 days remaining; 10 days total)                      |
+|                                                                                                                      |
+| Balance snapshot UTC: 2026-10-23 00:00:00                                                                            |
+| Latest reported completed usage day (UTC): 2026-10-22                                                                |
+| Future renewals and credit rollover are not forecast.                                                                |
+|                                                                                                                      |
+| Baseline                                                                                                             |
+| Selected day (UTC): 2026-10-22 - 2026-10-22                                                                          |
+|  Last 7 days (UTC): 2026-10-16 - 2026-10-22                                                                          |
+| Last 30 days (UTC): 2026-09-23 - 2026-10-22                                                                          |
+| Last 90 days (UTC): 2026-07-25 - 2026-10-22                                                                          |
+|                                                                                                                      |
+| Monthly calculation: 744 hours = 31 days                                                                             |
+|                                                                                                                      |
+| Metric (EUR)                     | Selected day     | Last 7 days      | Last 30 days     | Last 90 days             |
+| ---------------------------------+------------------+------------------+------------------+-----------------         |
+|         Remaining Credit - Total |              0.0 |              0.0 |              0.0 |              0.0         |
+|   Forecasted Consumption - Total |          2,000.0 |          2,000.0 |          2,000.0 |          2,000.0         |
+|    Unused/Overage Credit - Total |          2,000.0 |          2,000.0 |          2,000.0 |          2,000.0         |
+| ---------------------------------+------------------+------------------+------------------+-----------------         |
+|     Required Consumption - Daily |              0.0 |              0.0 |              0.0 |              0.0         |
+|   Forecasted Consumption - Daily |            200.0 |            200.0 |            200.0 |            200.0         |
+|    Unused/Overage Credit - Daily |            200.0 |            200.0 |            200.0 |            200.0         |
+| ---------------------------------+------------------+------------------+------------------+-----------------         |
+|   Required Consumption - Monthly |              0.0 |              0.0 |              0.0 |              0.0         |
+| Forecasted Consumption - Monthly |          6,200.0 |          6,200.0 |          6,200.0 |          6,200.0         |
+|  Unused/Overage Credit - Monthly |          6,200.0 |          6,200.0 |          6,200.0 |          6,200.0         |
+| ---------------------------------+------------------+------------------+------------------+-----------------         |
+|                  Days to horizon |        10.0 Days |        10.0 Days |        10.0 Days |        10.0 Days         |
+|                         Coverage |              1/1 |              7/7 |            30/30 |            90/90         |
+|                 Forecast outcome | Overage estimate | Overage estimate | Overage estimate | Overage estimate         |
+|                                                                                                                      |
+| Consumption trend: 7-day average 200.0 EUR/day vs 90-day average 200.0 EUR/day -> 0.0% unchanged; 1.0x the 90-day av |
+| erage.                                                                                                               |
+|                                                                                                                      |
+| Reported usage may still be delayed or revised.                                                                      |
+|                                                                                                                      |
+| Subscriptions: 1 | Successful: 1 | Failed: 0                                                                         |
+|                                                                                                                      |
+| Download: oci-subscription-analyzer-reports/oci-report-example.html                                                  |
+|                                                                                                                      |
+| *END OF THE REPORT* (2026-10-23 00:00:00 UTC)                                                                        |
++----------------------------------------------------------------------------------------------------------------------+
 

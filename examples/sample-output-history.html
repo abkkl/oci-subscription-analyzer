@@ -16,12 +16,12 @@ pre{font:13px/1.65 ui-monospace,SFMono-Regular,Consolas,"Liberation Mono",monosp
 @media print{@page{size:A3 landscape;margin:12mm}:root{color-scheme:light}body{background:#fff;color:#17212b;padding:0}header button{display:none}.report-frame{border:1px solid #657786;background:#fff;padding:12px}main{overflow:visible}pre{font-size:9px}.overage{color:#ae192b}.unused{color:#8a5a00}.balanced{color:#116142}.cyan{color:#00645d}.blue{color:#174da3}}
 </style></head><body>
 <section class="report-frame">
-<header><div><h1>OCI Subscription and Balance Report</h1><p>Fictional data · Saved report · Offline HTML</p></div>
+<header><div><h1>OCI Subscription and Balance Report</h1><p>Saved report · Offline HTML</p></div>
 <button type="button" onclick="window.print()">Print / Save as PDF</button></header>
 <main><pre>
-<span class="cyan">OCI SUBSCRIPTION AND BALANCE REPORT (Synthetic Test Tenant)</span>
+<span class="cyan">OCI SUBSCRIPTION AND BALANCE REPORT (Synthetic Example Tenant)</span>
 
-Report version: 2.9 | ahmet.bakkal@oracle.com
+Report version: 3.0 | ahmet.bakkal@oracle.com
 Region note: Run Cloud Shell in the tenancy home region.
 Home region: eu-frankfurt-1 (selected automatically for API calls)
 
@@ -42,15 +42,27 @@ Contract end (UTC): 2027-11-02 | 1 year 10 days remaining (375 days total)
 <span class="cyan">BALANCES (EUR)</span>
 Promo credit | Service total | Funded | Consumed | Remaining | Overage (records)
 -------------+---------------+--------+----------+-----------+------------------
-           — |      35,000.0 |      — | 18,000.0 |  17,000.0 |               0.0
+           — |      18,850.0 |      — |  1,850.0 |  17,000.0 |               0.0
 
 Overage audit (UTC): 2026-07-25 - 2026-10-22 | Usage dates returned: 90/295 | OVERAGE records: 0. Amounts cover returned records only; full contract coverage is unverified.
 
 Commitment periods: 2
 Status | Credit status | Start UTC  | End UTC    | Quantity | Net amount | Funded | Consumed | Remaining | Remaining days
 -------+---------------+------------+------------+----------+------------+--------+----------+-----------+---------------
-active | <span class="unused">Unused credit</span> | 2026-01-01 | 2026-11-02 | 28,000.0 |   28,000.0 |      — | 18,000.0 |  10,000.0 |             10
+active | <span class="unused">Unused credit</span> | 2026-01-01 | 2026-11-02 | 11,850.0 |   11,850.0 |      — |  1,850.0 |  10,000.0 |             10
 future | --            | 2026-11-02 | 2027-11-02 |  7,000.0 |    7,000.0 |      — |        — |   7,000.0 |            365
+
+<span class="cyan">RECENT DAILY CONSUMPTION (EUR) | UTC</span>
+Date       | Reported consumption | Baseline selection
+-----------+----------------------+-------------------
+2026-10-19 |                 25.0 |
+2026-10-20 |                 25.0 |
+2026-10-21 |                 25.0 |
+2026-10-22 |                 40.0 | Selected
+2026-10-23 |                  0.0 |
+Selection: --usage-delay-hours 0: highest reported consumption in the last 5 UTC days including today; ties use the newest date.
+All baseline windows end on: 2026-10-22 (UTC).
+Missing amounts are unavailable, not zero. Today&#x27;s amount is partial; reported dates may still be revised.
 
 <span class="cyan">FORECAST (EUR) | Horizon: Active commitment end - 2026-11-02 (10 days remaining; 10 days total)</span>
 
@@ -59,62 +71,71 @@ Latest reported completed usage day (UTC): 2026-10-22
 Future renewals and credit rollover are not forecast.
 
 Baseline
-Two days ago (UTC): 2026-10-21 - 2026-10-21
+Selected day (UTC): 2026-10-22 - 2026-10-22
  Last 7 days (UTC): 2026-10-16 - 2026-10-22
 Last 30 days (UTC): 2026-09-23 - 2026-10-22
 Last 90 days (UTC): 2026-07-25 - 2026-10-22
 
 Monthly calculation: 744 hours = 31 days
 
-Metric (EUR)                     | <span class="cyan">Two days ago</span>    | <span class="cyan">Last 7 days</span>     | <span class="cyan">Last 30 days</span>    | <span class="cyan">Last 90 days</span>
+Metric (EUR)                     | <span class="cyan">Selected day</span>    | <span class="cyan">Last 7 days</span>     | <span class="cyan">Last 30 days</span>    | <span class="cyan">Last 90 days</span>
 ---------------------------------+-----------------+-----------------+-----------------+----------------
         Remaining Credit - Total |        10,000.0 |        10,000.0 |        10,000.0 |        10,000.0
-  <span class="cyan">Forecasted Consumption - Total</span> |         2,000.0 |         2,000.0 |         2,000.0 |         2,000.0
-   Unused/Overage Credit - Total |         <span class="unused">8,000.0</span> |         <span class="unused">8,000.0</span> |         <span class="unused">8,000.0</span> |         <span class="unused">8,000.0</span>
+  <span class="cyan">Forecasted Consumption - Total</span> |           400.0 |           271.4 |           216.7 |           205.6
+   Unused/Overage Credit - Total |         <span class="unused">9,600.0</span> |         <span class="unused">9,728.6</span> |         <span class="unused">9,783.3</span> |         <span class="unused">9,794.4</span>
 ---------------------------------+-----------------+-----------------+-----------------+----------------
     Required Consumption - Daily |         1,000.0 |         1,000.0 |         1,000.0 |         1,000.0
-  <span class="cyan">Forecasted Consumption - Daily</span> |           200.0 |           200.0 |           200.0 |           200.0
-   Unused/Overage Credit - Daily |           <span class="unused">800.0</span> |           <span class="unused">800.0</span> |           <span class="unused">800.0</span> |           <span class="unused">800.0</span>
+  <span class="cyan">Forecasted Consumption - Daily</span> |            40.0 |            27.1 |            21.7 |            20.6
+   Unused/Overage Credit - Daily |           <span class="unused">960.0</span> |           <span class="unused">972.9</span> |           <span class="unused">978.3</span> |           <span class="unused">979.4</span>
 ---------------------------------+-----------------+-----------------+-----------------+----------------
   Required Consumption - Monthly |        31,000.0 |        31,000.0 |        31,000.0 |        31,000.0
-<span class="cyan">Forecasted Consumption - Monthly</span> |         6,200.0 |         6,200.0 |         6,200.0 |         6,200.0
- Unused/Overage Credit - Monthly |        <span class="unused">24,800.0</span> |        <span class="unused">24,800.0</span> |        <span class="unused">24,800.0</span> |        <span class="unused">24,800.0</span>
+<span class="cyan">Forecasted Consumption - Monthly</span> |         1,240.0 |           841.4 |           671.7 |           637.2
+ Unused/Overage Credit - Monthly |        <span class="unused">29,760.0</span> |        <span class="unused">30,158.6</span> |        <span class="unused">30,328.3</span> |        <span class="unused">30,362.8</span>
 ---------------------------------+-----------------+-----------------+-----------------+----------------
                  Days to horizon |       10.0 Days |       10.0 Days |       10.0 Days |       10.0 Days
                         Coverage |             1/1 |             7/7 |           30/30 |           90/90
                 Forecast outcome | <span class="unused">Unused estimate</span> | <span class="unused">Unused estimate</span> | <span class="unused">Unused estimate</span> | <span class="unused">Unused estimate</span>
 
-<span class="cyan">Consumption trend:</span> 7-day average 200.0 EUR/day vs 90-day average 200.0 EUR/day -&gt; 0.0% unchanged; 1.0x the 90-day average.
+<span class="cyan">Consumption trend:</span> 7-day average 27.1 EUR/day vs 90-day average 20.6 EUR/day -&gt; 32.0% higher; 1.3x the 90-day average.
 
 Reported usage may still be delayed or revised.
 
 ──────────────────────────────────────────────────────────────────────────────
-<span class="cyan">SERVICE 2 | EXAMPLE</span>
+<span class="cyan">SERVICE 2 | OLD-EXAMPLE</span>
 <span class="cyan">Synthetic historical credits</span>
 ──────────────────────────────────────────────────────────────────────────────
 Status: EXPIRED
-Program: — | Model: Annual
-Period (UTC): 2024-01-01 → 2025-12-31
-Contract end (UTC): 2025-12-31 | Expired
+Program: — | Model: —
+Period (UTC): 2024-01-01 → 2025-01-01
+Contract end (UTC): 2025-01-01 | Expired
 
 <span class="cyan">BALANCES (EUR)</span>
 Promo credit | Service total | Funded | Consumed | Remaining | Overage (records)
 -------------+---------------+--------+----------+-----------+------------------
-           — |       5,000.0 |      — |  5,200.0 |       0.0 |             200.0
+           — |         500.0 |      — |    500.0 |       0.0 |                 —
 
-Overage audit (UTC): 2025-12-31 - 2025-12-31 | Usage dates returned: 1/731 | OVERAGE records: 1. Amounts cover returned records only; full contract coverage is unverified.
+Overage audit (UTC): No matching records | Usage dates returned: 0/366 | OVERAGE records: 0. Amounts cover returned records only; full contract coverage is unverified.
 
-Commitment periods: 1
-Status | Credit status  | Start UTC  | End UTC    | Quantity | Net amount | Funded | Consumed | Remaining | Remaining days
--------+----------------+------------+------------+----------+------------+--------+----------+-----------+---------------
-past   | <span class="overage">Overage credit</span> | 2025-01-01 | 2025-12-31 |  5,000.0 |    5,000.0 |      — |  5,200.0 |       0.0 |              0
+Commitment periods: 0
+
+<span class="cyan">RECENT DAILY CONSUMPTION (EUR) | UTC</span>
+Date       | Reported consumption | Baseline selection
+-----------+----------------------+-------------------
+2026-10-19 |                    — |
+2026-10-20 |                    — |
+2026-10-21 |                    — |
+2026-10-22 |                    — |
+2026-10-23 |                    — |
+Selection: --usage-delay-hours 0: highest reported consumption in the last 5 UTC days including today; ties use the newest date.
+All baseline windows end on: Unavailable (UTC).
+Missing amounts are unavailable, not zero. Today&#x27;s amount is partial; reported dates may still be revised.
 
 Forecast unavailable (EUR): service is not ACTIVE.
 
 Subscriptions: 1 | Successful: 1 | Failed: 0
 
-Download: oci-subscription-analyzer-reports/oci-report-20261023-153219-036815.html
-
-<span class="cyan">*END OF THE REPORT* (2026-10-23 15:32:19 UTC)</span>
+Download: oci-subscription-analyzer-reports/oci-report-example.html
+<span class="cyan">
+*END OF THE REPORT* (2026-10-23 00:00:00 UTC)</span>
 
 </pre></main></section></body></html>

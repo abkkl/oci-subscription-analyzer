@@ -16,12 +16,12 @@ pre{font:13px/1.65 ui-monospace,SFMono-Regular,Consolas,"Liberation Mono",monosp
 @media print{@page{size:A3 landscape;margin:12mm}:root{color-scheme:light}body{background:#fff;color:#17212b;padding:0}header button{display:none}.report-frame{border:1px solid #657786;background:#fff;padding:12px}main{overflow:visible}pre{font-size:9px}.overage{color:#ae192b}.unused{color:#8a5a00}.balanced{color:#116142}.cyan{color:#00645d}.blue{color:#174da3}}
 </style></head><body>
 <section class="report-frame">
-<header><div><h1>OCI Subscription and Balance Report</h1><p>Fictional data · Saved report · Offline HTML</p></div>
+<header><div><h1>OCI Subscription and Balance Report</h1><p>Saved report · Offline HTML</p></div>
 <button type="button" onclick="window.print()">Print / Save as PDF</button></header>
 <main><pre>
-<span class="cyan">OCI SUBSCRIPTION AND BALANCE REPORT (Synthetic Test Tenant)</span>
+<span class="cyan">OCI SUBSCRIPTION AND BALANCE REPORT (Synthetic Example Tenant)</span>
 
-Report version: 2.9 | ahmet.bakkal@oracle.com
+Report version: 3.0 | ahmet.bakkal@oracle.com
 Region note: Run Cloud Shell in the tenancy home region.
 Home region: eu-frankfurt-1 (selected automatically for API calls)
 
@@ -53,6 +53,18 @@ Status | Credit status | Start UTC  | End UTC    | Quantity | Net amount | Funde
 active | <span class="unused">Unused credit</span> | 2026-01-01 | 2026-11-02 | 19,000.0 |   19,000.0 |      — | 18,000.0 |   1,000.0 |             10
 future | --            | 2026-11-02 | 2027-11-02 |  7,000.0 |    7,000.0 |      — |        — |   7,000.0 |            365
 
+<span class="cyan">RECENT DAILY CONSUMPTION (EUR) | UTC</span>
+Date       | Reported consumption | Baseline selection
+-----------+----------------------+-------------------
+2026-10-19 |                200.0 |
+2026-10-20 |                200.0 |
+2026-10-21 |                200.0 |
+2026-10-22 |                200.0 | Selected
+2026-10-23 |                  0.0 |
+Selection: --usage-delay-hours 0: highest reported consumption in the last 5 UTC days including today; ties use the newest date.
+All baseline windows end on: 2026-10-22 (UTC).
+Missing amounts are unavailable, not zero. Today&#x27;s amount is partial; reported dates may still be revised.
+
 <span class="cyan">FORECAST (EUR) | Horizon: Active commitment end - 2026-11-02 (10 days remaining; 10 days total)</span>
 
 Balance snapshot UTC: 2026-10-23 00:00:00
@@ -60,14 +72,14 @@ Latest reported completed usage day (UTC): 2026-10-22
 Future renewals and credit rollover are not forecast.
 
 Baseline
-Two days ago (UTC): 2026-10-21 - 2026-10-21
+Selected day (UTC): 2026-10-22 - 2026-10-22
  Last 7 days (UTC): 2026-10-16 - 2026-10-22
 Last 30 days (UTC): 2026-09-23 - 2026-10-22
 Last 90 days (UTC): 2026-07-25 - 2026-10-22
 
 Monthly calculation: 744 hours = 31 days
 
-Metric (EUR)                     | <span class="cyan">Two days ago</span>     | <span class="cyan">Last 7 days</span>      | <span class="cyan">Last 30 days</span>     | <span class="cyan">Last 90 days</span>
+Metric (EUR)                     | <span class="cyan">Selected day</span>     | <span class="cyan">Last 7 days</span>      | <span class="cyan">Last 30 days</span>     | <span class="cyan">Last 90 days</span>
 ---------------------------------+------------------+------------------+------------------+-----------------
         Remaining Credit - Total |          1,000.0 |          1,000.0 |          1,000.0 |          1,000.0
   <span class="cyan">Forecasted Consumption - Total</span> |          2,000.0 |          2,000.0 |          2,000.0 |          2,000.0
@@ -91,8 +103,8 @@ Reported usage may still be delayed or revised.
 
 Subscriptions: 1 | Successful: 1 | Failed: 0
 
-Download: oci-subscription-analyzer-reports/oci-report-20261023-153219-041898.html
-
-<span class="cyan">*END OF THE REPORT* (2026-10-23 15:32:19 UTC)</span>
+Download: oci-subscription-analyzer-reports/oci-report-example.html
+<span class="cyan">
+*END OF THE REPORT* (2026-10-23 00:00:00 UTC)</span>
 
 </pre></main></section></body></html>
