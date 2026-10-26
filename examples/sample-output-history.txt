@@ -2,7 +2,7 @@
 +----------------------------------------------------------------------------------------------------------------------+
 | OCI SUBSCRIPTION AND BALANCE REPORT (Synthetic Example Tenant)                                                       |
 |                                                                                                                      |
-| Report version: 3.0 | ahmet.bakkal@oracle.com                                                                        |
+| Report version: 3.1 | ahmet.bakkal@oracle.com                                                                        |
 | Region note: Run Cloud Shell in the tenancy home region.                                                             |
 | Home region: eu-frankfurt-1 (selected automatically for API calls)                                                   |
 |                                                                                                                      |
